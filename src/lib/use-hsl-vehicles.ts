@@ -108,6 +108,11 @@ export function useHSLVehicles({
         const parts = topic.split('/')
         const mode = parts[6] as TransportMode
 
+        // Only add vehicles for currently enabled modes
+        if (!modesRef.current.includes(mode)) {
+          return
+        }
+
         // Create unique vehicle ID
         const id = `${vp.oper}/${vp.veh}`
 
@@ -170,6 +175,21 @@ export function useHSLVehicles({
     }
   }, [enabled, connect])
 
+  // Filter out vehicles immediately when modes change
+  useEffect(() => {
+    setVehicles((prev) => {
+      const updated = new Map(prev)
+      let hasChanges = false
+      for (const [id, vehicle] of updated) {
+        if (!modes.includes(vehicle.mode)) {
+          updated.delete(id)
+          hasChanges = true
+        }
+      }
+      return hasChanges ? updated : prev
+    })
+  }, [modes])
+
   // Resubscribe when modes change
   useEffect(() => {
     if (!clientRef.current || !isConnected) return
@@ -188,17 +208,6 @@ export function useHSLVehicles({
           }
         })
       }
-
-      // Clear vehicles that don't match the new mode filters
-      setVehicles((prev) => {
-        const updated = new Map(prev)
-        for (const [id, vehicle] of updated) {
-          if (!modes.includes(vehicle.mode)) {
-            updated.delete(id)
-          }
-        }
-        return updated
-      })
     })
   }, [modes, isConnected])
 
