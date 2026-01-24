@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import type { TransportMode } from '@/lib/hsl-types'
 import { TransportMap } from '@/components/transport-map'
@@ -27,6 +27,30 @@ function App() {
     robot: false,
   })
 
+  // Track selected desi values per mode
+  const [selectedDesiByMode, setSelectedDesiByMode] = useState<
+    Record<TransportMode, Set<string>>
+  >({
+    bus: new Set(),
+    tram: new Set(),
+    train: new Set(),
+    metro: new Set(),
+    ferry: new Set(),
+    ubus: new Set(),
+    robot: new Set(),
+  })
+
+  // Track all desi values we've ever seen (use ref to avoid triggering re-renders)
+  const seenDesiByModeRef = useRef<Record<TransportMode, Set<string>>>({
+    bus: new Set(),
+    tram: new Set(),
+    train: new Set(),
+    metro: new Set(),
+    ferry: new Set(),
+    ubus: new Set(),
+    robot: new Set(),
+  })
+
   // Get array of enabled modes for the hook
   const activeModes = useMemo(
     () =>
@@ -42,14 +66,68 @@ function App() {
     isConnected,
     isConnecting,
     error,
-    vehicleCount,
     reconnect,
   } = useHSLVehicles({
     modes: activeModes,
     enabled: activeModes.length > 0,
   })
 
-  // Count vehicles by mode
+  // Auto-select new desi values as they appear (only truly new ones we've never seen)
+  useEffect(() => {
+    const seenDesiByMode = seenDesiByModeRef.current
+
+    // Find truly new desi values (ones we've never seen before)
+    const trulyNewByMode: Record<TransportMode, Array<string>> = {
+      bus: [],
+      tram: [],
+      train: [],
+      metro: [],
+      ferry: [],
+      ubus: [],
+      robot: [],
+    }
+
+    for (const vehicle of vehicles.values()) {
+      const desi = vehicle.position.desi || ''
+      if (!seenDesiByMode[vehicle.mode].has(desi)) {
+        trulyNewByMode[vehicle.mode].push(desi)
+        // Mark as seen immediately in the ref
+        seenDesiByMode[vehicle.mode].add(desi)
+      }
+    }
+
+    // Check if any mode has new desi values
+    const hasNewDesi = Object.values(trulyNewByMode).some((arr) => arr.length > 0)
+
+    if (hasNewDesi) {
+      // Auto-select the truly new desi values
+      setSelectedDesiByMode((prev) => {
+        const updated = { ...prev }
+        for (const mode of Object.keys(trulyNewByMode) as Array<TransportMode>) {
+          if (trulyNewByMode[mode].length > 0) {
+            updated[mode] = new Set([...prev[mode], ...trulyNewByMode[mode]])
+          }
+        }
+        return updated
+      })
+    }
+  }, [vehicles])
+
+  // Filter vehicles based on selected desi values
+  const filteredVehicles = useMemo(() => {
+    const filtered = new Map(vehicles)
+    for (const [id, vehicle] of vehicles) {
+      const selectedDesi = selectedDesiByMode[vehicle.mode]
+      const desi = vehicle.position.desi || ''
+      // Only show vehicles whose desi is in the selected set
+      if (!selectedDesi.has(desi)) {
+        filtered.delete(id)
+      }
+    }
+    return filtered
+  }, [vehicles, selectedDesiByMode])
+
+  // Count vehicles by mode (from filtered vehicles)
   const countsByMode = useMemo(() => {
     const counts: Record<TransportMode, number> = {
       bus: 0,
@@ -60,18 +138,58 @@ function App() {
       ubus: 0,
       robot: 0,
     }
-    vehicles.forEach((vehicle) => {
+    filteredVehicles.forEach((vehicle) => {
       counts[vehicle.mode]++
     })
     return counts
-  }, [vehicles])
+  }, [filteredVehicles])
 
   const handleToggleMode = useCallback(
     (mode: TransportMode, enabled: boolean) => {
       setEnabledModes((prev) => ({ ...prev, [mode]: enabled }))
+      // Reset desi selection and seen set when mode is disabled
+      if (!enabled) {
+        setSelectedDesiByMode((prev) => ({
+          ...prev,
+          [mode]: new Set(),
+        }))
+        seenDesiByModeRef.current[mode] = new Set()
+      }
     },
     [],
   )
+
+  const handleDesiToggle = useCallback(
+    (mode: TransportMode, desi: string, checked: boolean) => {
+      setSelectedDesiByMode((prev) => {
+        const updated = new Set(prev[mode])
+        if (checked) {
+          updated.add(desi)
+        } else {
+          updated.delete(desi)
+        }
+        return { ...prev, [mode]: updated }
+      })
+    },
+    [],
+  )
+
+  const handleSelectAllDesi = useCallback(
+    (mode: TransportMode) => {
+      const allDesi = new Set<string>()
+      vehicles.forEach((vehicle) => {
+        if (vehicle.mode === mode) {
+          allDesi.add(vehicle.position.desi || '')
+        }
+      })
+      setSelectedDesiByMode((prev) => ({ ...prev, [mode]: allDesi }))
+    },
+    [vehicles],
+  )
+
+  const handleDeselectAllDesi = useCallback((mode: TransportMode) => {
+    setSelectedDesiByMode((prev) => ({ ...prev, [mode]: new Set() }))
+  }, [])
 
   return (
     <div className="flex h-screen w-screen bg-background">
@@ -116,8 +234,13 @@ function App() {
               isConnected={isConnected}
               isConnecting={isConnecting}
               error={error}
-              totalCount={vehicleCount}
+              totalCount={filteredVehicles.size}
               onReconnect={reconnect}
+              vehicles={vehicles}
+              selectedDesiByMode={selectedDesiByMode}
+              onDesiToggle={handleDesiToggle}
+              onSelectAllDesi={handleSelectAllDesi}
+              onDeselectAllDesi={handleDeselectAllDesi}
             />
           </div>
         </div>
@@ -152,7 +275,7 @@ function App() {
 
       {/* Map - full width */}
       <div className="h-full w-full">
-        <TransportMap vehicles={vehicles} />
+        <TransportMap vehicles={filteredVehicles} />
       </div>
     </div>
   )
