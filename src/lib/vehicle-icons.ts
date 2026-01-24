@@ -1,6 +1,6 @@
 import L from 'leaflet'
-import type { TransportMode } from './hsl-types'
-import { TRANSPORT_COLORS } from './hsl-types'
+import type { TransportMode } from '@/lib/hsl-types'
+import { TRANSPORT_COLORS } from '@/lib/hsl-types'
 
 // Create SVG icons for each transport mode
 function createVehicleSvg(mode: TransportMode, heading: number): string {
