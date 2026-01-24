@@ -1,8 +1,8 @@
+import type { TransportMode } from '@/lib/hsl-types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import type { TransportMode } from '@/lib/hsl-types'
 import { TRANSPORT_COLORS, TRANSPORT_NAMES } from '@/lib/hsl-types'
 
 interface TransportModeToggleProps {
@@ -58,7 +58,7 @@ export function ControlPanel({
   totalCount,
   onReconnect,
 }: ControlPanelProps) {
-  const transportModes: TransportMode[] = [
+  const transportModes: Array<TransportMode> = [
     'bus',
     'tram',
     'train',
@@ -109,7 +109,7 @@ export function ControlPanel({
             mode={mode}
             enabled={modes[mode]}
             count={counts[mode]}
-            onToggle={(enabled) => onToggleMode(mode, enabled)}
+            onToggle={(enabled: boolean) => onToggleMode(mode, enabled)}
           />
         ))}
         <div className="mt-4 border-t pt-4">

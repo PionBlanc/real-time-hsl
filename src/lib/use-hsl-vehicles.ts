@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import mqtt from 'mqtt'
-import type { Vehicle, TransportMode, HFPMessage } from './hsl-types'
+import type { HFPMessage, TransportMode, Vehicle } from './hsl-types'
 
 const MQTT_BROKER_URL = 'wss://mqtt.hsl.fi:443/'
 
@@ -8,7 +8,7 @@ const MQTT_BROKER_URL = 'wss://mqtt.hsl.fi:443/'
 const STALE_TIMEOUT = 60000
 
 export interface UseHSLVehiclesOptions {
-  modes: TransportMode[]
+  modes: Array<TransportMode>
   enabled?: boolean
 }
 
@@ -31,7 +31,7 @@ export function useHSLVehicles({
   const [error, setError] = useState<string | null>(null)
 
   const clientRef = useRef<mqtt.MqttClient | null>(null)
-  const modesRef = useRef<TransportMode[]>(modes)
+  const modesRef = useRef<Array<TransportMode>>(modes)
 
   // Update modes ref when modes change
   useEffect(() => {
@@ -81,7 +81,7 @@ export function useHSLVehicles({
 
       // Subscribe to vehicle position updates for selected modes
       const topics = modesRef.current.map(
-        (mode) => `/hfp/v2/journey/ongoing/vp/${mode}/#`
+        (mode) => `/hfp/v2/journey/ongoing/vp/${mode}/#`,
       )
 
       if (topics.length > 0) {

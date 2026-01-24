@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef } from 'react'
 import {
   MapContainer,
-  TileLayer,
   Marker,
   Popup,
-  useMap,
+  TileLayer,
   ZoomControl,
+  useMap,
 } from 'react-leaflet'
 import type { Map as LeafletMap } from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import type { Vehicle } from '@/lib/hsl-types'
-import { TRANSPORT_NAMES, TRANSPORT_COLORS } from '@/lib/hsl-types'
+import { TRANSPORT_COLORS, TRANSPORT_NAMES } from '@/lib/hsl-types'
 import { getVehicleIcon } from '@/lib/vehicle-icons'
 import { Badge } from '@/components/ui/badge'
 
