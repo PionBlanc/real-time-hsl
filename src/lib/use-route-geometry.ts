@@ -2,13 +2,9 @@ import { useCallback, useState } from 'react'
 import type { Vehicle } from './hsl-types'
 
 // Digitransit GraphQL API endpoint (proxied through Vite to avoid CORS)
+// The API key is injected server-side by the Vite proxy - never exposed to client
 // Using the v2 GTFS API: https://api.digitransit.fi/routing/v2/hsl/gtfs/v1
 const DIGITRANSIT_API_URL = '/api/digitransit/routing/v2/hsl/gtfs/v1'
-
-// API key from environment variable (register at https://portal-api.digitransit.fi/)
-const DIGITRANSIT_API_KEY = import.meta.env.VITE_DIGITRANSIT_API_KEY as
-  | string
-  | undefined
 
 export interface RouteGeometry {
   coordinates: Array<[number, number]> // [lat, lng] pairs
@@ -86,17 +82,11 @@ export function useRouteGeometry(): UseRouteGeometryResult {
         }
       `
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      }
-
-      if (DIGITRANSIT_API_KEY) {
-        headers['digitransit-subscription-key'] = DIGITRANSIT_API_KEY
-      }
-
       const response = await fetch(DIGITRANSIT_API_URL, {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           query,
           variables: {
@@ -140,7 +130,9 @@ export function useRouteGeometry(): UseRouteGeometryResult {
 
         const fallbackResponse = await fetch(DIGITRANSIT_API_URL, {
           method: 'POST',
-          headers,
+          headers: {
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify({
             query: fallbackQuery,
             variables: { route: routeId },
