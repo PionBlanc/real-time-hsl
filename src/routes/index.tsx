@@ -193,6 +193,15 @@ function App() {
 
   return (
     <div className="flex h-screen w-screen bg-background">
+      {/* Backdrop overlay - closes sidebar when clicked */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-[999] bg-black/20 transition-opacity"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Sidebar */}
       <aside
         className={`absolute left-0 top-0 z-[1000] h-full w-80 transform bg-background/95 backdrop-blur-sm transition-transform duration-300 ease-in-out ${
