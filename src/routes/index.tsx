@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import type { TransportMode } from '@/lib/hsl-types'
+import type { TransportMode, Vehicle } from '@/lib/hsl-types'
 import { TransportMap } from '@/components/transport-map'
 import { ControlPanel } from '@/components/control-panel'
 import { useHSLVehicles } from '@/lib/use-hsl-vehicles'
+import { useRouteGeometry } from '@/lib/use-route-geometry'
 import { Button } from '@/components/ui/button'
 
 export const Route = createFileRoute('/')({
@@ -72,6 +73,33 @@ function App() {
     enabled: activeModes.length > 0,
   })
 
+  // Track selected vehicle for route display
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null)
+
+  // Route geometry hook
+  const {
+    geometry: routeGeometry,
+    isLoading: isLoadingRoute,
+    fetchGeometry,
+    clearGeometry,
+  } = useRouteGeometry()
+
+  // Handle vehicle click to show/hide route
+  const handleVehicleClick = useCallback(
+    (vehicle: Vehicle) => {
+      if (selectedVehicle?.id === vehicle.id) {
+        // Clicking the same vehicle clears the selection
+        setSelectedVehicle(null)
+        clearGeometry()
+      } else {
+        // Select new vehicle and fetch its route
+        setSelectedVehicle(vehicle)
+        fetchGeometry(vehicle)
+      }
+    },
+    [selectedVehicle, fetchGeometry, clearGeometry],
+  )
+
   // Auto-select new desi values as they appear (only truly new ones we've never seen)
   useEffect(() => {
     const seenDesiByMode = seenDesiByModeRef.current
@@ -126,6 +154,14 @@ function App() {
     }
     return filtered
   }, [vehicles, selectedDesiByMode])
+
+  // Clear selection if the selected vehicle disappears from the map
+  useEffect(() => {
+    if (selectedVehicle && !filteredVehicles.has(selectedVehicle.id)) {
+      setSelectedVehicle(null)
+      clearGeometry()
+    }
+  }, [filteredVehicles, selectedVehicle, clearGeometry])
 
   // Count vehicles by mode (from filtered vehicles)
   const countsByMode = useMemo(() => {
@@ -284,7 +320,13 @@ function App() {
 
       {/* Map - full width */}
       <div className="h-full w-full">
-        <TransportMap vehicles={filteredVehicles} />
+        <TransportMap
+          vehicles={filteredVehicles}
+          selectedVehicle={selectedVehicle}
+          routeGeometry={routeGeometry}
+          isLoadingRoute={isLoadingRoute}
+          onVehicleClick={handleVehicleClick}
+        />
       </div>
     </div>
   )
