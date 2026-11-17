@@ -20,42 +20,49 @@ export const COLORS: Record<Mode, string> = {
   ferry: '#00B9E4',
 }
 
+/**
+ * The `VP` (vehicle position) object of an HFP payload: `{"VP": {...}}`.
+ * Field names are HSL's abbreviations and must match the wire format.
+ * Only the fields this app reads are typed; the payload also carries e.g. tsi (unix
+ * seconds), acc (m/s²), odo (odometer, m), loc (position source), stop, occu, jrn, line.
+ */
 export interface VP {
-  desi?: string
-  dir?: string
-  oper: number
-  veh: number
-  tst: string
-  spd: number | null
-  hdg: number | null
-  lat: number | null
-  long: number | null
-  dl: number | null
-  drst: number | null
-  oday: string | null
-  start: string | null
-  route: string | null
+  desi?: string        // route "designation" shown to passengers, e.g. "550", "M1"
+  dir?: string         // direction of the route: "1" or "2"
+  oper: number         // operator (transport company) id
+  veh: number          // vehicle number, unique only within its operator
+  tst: string          // timestamp of this position, UTC ISO 8601, e.g. "2026-11-17T08:15:30.123Z"
+  spd: number | null   // speed, m/s
+  hdg: number | null   // heading, degrees clockwise from north (0–360)
+  lat: number | null   // latitude, WGS84
+  long: number | null  // longitude, WGS84
+  dl: number | null    // schedule deviation, seconds: negative = late, positive = early
+  drst: number | null  // door status: 0 = all closed, 1 = some open
+  oday: string | null  // operating day YYYY-MM-DD; after-midnight trips belong to the previous day
+  start: string | null // scheduled trip start, local "HH:mm"
+  route: string | null // route id, e.g. "2550" (no "HSL:" prefix)
 }
 
+/** One parsed vehicle-position update, combining topic levels and the VP payload. */
 export interface Msg {
-  id: string // "<topicOper>/<topicVeh>", stable vehicle identity
-  mode: Mode
-  oper: string // zero-padded, as in topic
-  veh: string
-  route: string
-  dir: string
-  headsign: string
-  start: string
-  nextStop: string // stop id without "HSL:" prefix, or "EOL"/""
-  desi: string
-  lat: number
-  lng: number
-  hdg: number | null
-  spd: number | null
-  dl: number | null
-  doorsOpen: boolean
-  oday: string
-  tst: string
+  id: string         // "<topicOper>/<topicVeh>", stable vehicle identity
+  mode: Mode         // transport mode, normalised (ubus/robot → bus)
+  oper: string       // operator id, zero-padded, as in topic
+  veh: string        // vehicle number, zero-padded, as in topic
+  route: string      // route id, e.g. "2550"
+  dir: string        // direction: "1" or "2"
+  headsign: string   // destination name shown on the vehicle
+  start: string      // scheduled trip start, local "HH:mm"
+  nextStop: string   // stop id without "HSL:" prefix, or "EOL"/""
+  desi: string       // route number shown to passengers, e.g. "550"
+  lat: number        // latitude, WGS84
+  lng: number        // longitude, WGS84
+  hdg: number | null // heading, degrees clockwise from north
+  spd: number | null // speed, m/s
+  dl: number | null  // schedule deviation, seconds: negative = late, positive = early
+  doorsOpen: boolean // from drst
+  oday: string       // operating day YYYY-MM-DD (see VP.oday)
+  tst: string        // timestamp of this position, UTC ISO 8601
 }
 
 const dec = new TextDecoder()

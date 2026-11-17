@@ -12,14 +12,15 @@ const QUERY = `query($a:Float!,$b:Float!,$c:Float!,$d:Float!){
   stopsByBbox(minLat:$a,minLon:$b,maxLat:$c,maxLon:$d){gtfsId name code lat lon vehicleMode}
 }`
 
+/** Digitransit GraphQL response (only the fields queried above). */
 interface Resp {
   stopsByBbox: Array<{
-    gtfsId: string
-    name: string
-    code: string | null
+    gtfsId: string             // feed-prefixed stop id, e.g. "HSL:1130446" (other regions' stops have other prefixes)
+    name: string               // e.g. "Kamppi"
+    code: string | null        // short code shown at the stop, e.g. "H1234"
     lat: number
     lon: number
-    vehicleMode: string | null
+    vehicleMode: string | null // GTFS mode serving the stop: "BUS", "TRAM", "SUBWAY", "RAIL", "FERRY"…
   }> | null
 }
 

@@ -13,13 +13,23 @@ const QUERY = `query($r:String!,$d:Int!,$date:String!,$t:Int!){
   }
 }`
 
+/**
+ * Digitransit GraphQL response (only the fields queried above).
+ * fuzzyTrip finds the trip from what HFP knows: route, direction, service day and start time.
+ */
 interface Resp {
   fuzzyTrip: null | {
-    tripHeadsign: string | null
-    route: { shortName: string; mode: string }
+    tripHeadsign: string | null // destination, e.g. "Kamppi"
+    route: {
+      shortName: string // line number shown to passengers, e.g. "551"
+      mode: string      // GTFS mode: "BUS", "TRAM", "SUBWAY", "RAIL", "FERRY"
+    }
+    // A pattern is the sequence of stops/path shared by trips of a route+direction.
+    // points: path as a Google encoded polyline (decoded by decodePolyline in src/api.ts)
     pattern: { patternGeometry: { points: string } | null }
     stoptimes: Array<{
-      scheduledDeparture: number
+      scheduledDeparture: number // s since service-day midnight (may exceed 86400)
+      // Same fields as in stops.ts
       stop: { gtfsId: string; name: string; code: string | null; lat: number; lon: number }
     }>
   }

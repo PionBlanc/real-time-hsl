@@ -1,20 +1,33 @@
 import { helsinkiDate, tripStartSeconds } from './hfp'
 import type { Mode, Msg } from './hfp'
 
+/*
+ * Client-side types for our own /api/* endpoints (see api/*.ts), which wrap the
+ * Digitransit GraphQL API. The endpoints send compact JSON (short keys, positional
+ * arrays) to save bandwidth; the fetch* functions below expand it into these types.
+ *
+ * Time conventions:
+ * - "service day": the operating day a trip belongs to. Trips after midnight still
+ *   belong to the previous day, so "s since service-day midnight" can exceed 86400.
+ * - "unix s": seconds since 1970-01-01 UTC.
+ */
+
+/** One stop along a trip (from /api/trip). */
 export interface TripStop {
-  id: string // without "HSL:"
-  name: string
-  code: string
+  id: string   // GTFS stop id without "HSL:", e.g. "1130446"
+  name: string // stop name, e.g. "Kamppi"
+  code: string // short code shown at the stop, e.g. "H1234"; "" if none
   lat: number
   lng: number
-  t: number // scheduled departure, s since service-day midnight
+  t: number    // scheduled departure, s since service-day midnight
 }
 
+/** The scheduled trip a live vehicle is running (from /api/trip). */
 export interface Trip {
-  headsign: string
-  name: string
-  shape: Array<[number, number]>
-  stops: Array<TripStop>
+  headsign: string               // destination, e.g. "Kamppi"
+  name: string                   // line number shown to passengers, e.g. "551"
+  shape: Array<[number, number]> // path the vehicle drives, [lat, lng] points
+  stops: Array<TripStop>         // in driving order
 }
 
 export class MissingKeyError extends Error {}
@@ -54,10 +67,11 @@ export function fetchTrip(m: Msg): Promise<Trip | null> {
   return p
 }
 
+/** A route matching a searched line number (from /api/routes, used as-is). */
 export interface RouteRef {
-  id: string
-  n: string
-  m: string
+  id: string // route id without "HSL:", as in HFP topics, e.g. "2551"
+  n: string  // name: line number shown to passengers, e.g. "551"
+  m: string  // GTFS mode: "BUS", "TRAM", "SUBWAY", "RAIL", "FERRY" (see gtfsMode)
 }
 
 const routeCache = new Map<string, Promise<Array<RouteRef>>>()
@@ -95,35 +109,38 @@ export function gtfsMode(m: string): Mode | null {
   }
 }
 
+/** A stop on the map (from /api/stops, and the header of /api/stop). */
 export interface StopRef {
-  id: string // without "HSL:"
-  name: string
-  code: string
+  id: string        // GTFS stop id without "HSL:", e.g. "1130446"
+  name: string      // stop name, e.g. "Kamppi"
+  code: string      // short code shown at the stop, e.g. "H1234"; "" if none
   lat: number
   lng: number
-  mode: Mode | null
+  mode: Mode | null // what serves the stop; null if unknown or not an app mode
 }
 
+/** One upcoming departure from a stop (from /api/stop). */
 export interface Departure {
-  line: string
+  line: string      // line number shown to passengers, e.g. "551"
   mode: Mode | null
-  headsign: string
-  at: number // estimated (or scheduled) departure, unix seconds
-  sched: number // scheduled departure, unix seconds
-  clockSec: number // estimated departure, s since service-day midnight (for clock())
-  realtime: boolean
-  canceled: boolean
-  // For matching against live HFP vehicles:
-  route: string
-  dir: string
-  date: string // service day YYYY-MM-DD
-  start: number // trip start, s since service-day midnight (-1 = unknown)
+  headsign: string  // destination, e.g. "Kamppi"
+  at: number        // estimated (or scheduled) departure, unix seconds
+  sched: number     // scheduled departure, unix seconds
+  clockSec: number  // estimated departure, s since service-day midnight (for clock())
+  realtime: boolean // true = `at` is a live estimate, false = only the timetable
+  canceled: boolean // trip is canceled (still listed, so it can be shown struck out)
+  // For matching against live HFP vehicles (same meaning as in Msg):
+  route: string // route id without "HSL:", e.g. "2551"
+  dir: string   // direction "1" or "2", HFP style
+  date: string  // service day YYYY-MM-DD (Msg.oday)
+  start: number // trip's start at its first stop, s since service-day midnight (-1 = unknown)
 }
 
+/** The departure board ("bus-stop screen") of one stop (from /api/stop). */
 export interface StopBoard {
   stop: StopRef
-  platform: string
-  departures: Array<Departure>
+  platform: string             // platform/track number, e.g. "3"; "" if none
+  departures: Array<Departure> // in time order, STOP_PAGE at most
 }
 
 /** Same departure across fetches (realtime estimates change, these don't). */

@@ -15,24 +15,31 @@ const QUERY = `query($id:String!,$start:Long!,$n:Int!){
   }
 }`
 
+/** Digitransit GraphQL response (only the fields queried above). */
 interface Resp {
   stop: null | {
-    name: string
-    code: string | null
-    platformCode: string | null
+    name: string                // e.g. "Kamppi"
+    code: string | null         // short code shown at the stop, e.g. "H1234"
+    platformCode: string | null // platform/track number, e.g. "3"
     lat: number
     lon: number
-    vehicleMode: string | null
+    vehicleMode: string | null  // GTFS mode: "BUS", "TRAM", "SUBWAY", "RAIL", "FERRY"…
+    // Upcoming departures from this stop, across all routes ("without patterns" = one flat list).
     stoptimesWithoutPatterns: Array<{
-      serviceDay: number
-      scheduledDeparture: number
-      realtimeDeparture: number
-      realtime: boolean
-      realtimeState: string | null
-      headsign: string | null
+      serviceDay: number           // unix s of the service day's local midnight (actually noon − 12 h)
+      scheduledDeparture: number   // timetable time, s since serviceDay
+      realtimeDeparture: number    // live estimate, s since serviceDay (= scheduled if no realtime)
+      realtime: boolean            // true if realtimeDeparture comes from live data
+      realtimeState: string | null // "SCHEDULED", "UPDATED", "CANCELED", "ADDED" or "MODIFIED"
+      headsign: string | null      // destination as shown at this stop
       trip: {
-        directionId: string | null
-        route: { gtfsId: string; shortName: string | null; mode: string }
+        directionId: string | null // GTFS direction "0"/"1" (HFP uses 1/2)
+        route: {
+          gtfsId: string           // e.g. "HSL:2551"
+          shortName: string | null // line number shown to passengers, e.g. "551"
+          mode: string             // GTFS mode
+        }
+        // The trip's departure from its first stop; identifies the trip like HFP's `start`.
         departureStoptime: { scheduledDeparture: number } | null
       }
     }>
