@@ -333,7 +333,7 @@ svg {
   opacity: 0.3;
 }
 .has-sel .veh.same-line {
-  opacity: 0.65;
+  opacity: 1;
 }
 .veh.sel b {
   transform: translate(-50%, -50%) scale(1.3);

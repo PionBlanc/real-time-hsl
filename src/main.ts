@@ -74,12 +74,10 @@ if (__HAS_KEY__) {
     attribution: '© <a href="https://www.hsl.fi/">HSL</a> © <a href="https://www.openstreetmap.org/copyright">OSM</a>',
   } as L.TileLayerOptions).addTo(map)
 } else {
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{q}.png', {
-    q: retina,
-    subdomains: 'abcd',
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 18,
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a>',
-  } as L.TileLayerOptions).addTo(map)
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  }).addTo(map)
 }
 
 // No marker glide while Leaflet re-positions everything on zoom.
