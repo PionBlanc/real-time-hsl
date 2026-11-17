@@ -157,7 +157,7 @@ const mqtt = new MqttClient(
 )
 
 /** Below this zoom, vehicles in an area are drawn as plain dots (there can be 1000+). */
-const COMPACT_BELOW_ZOOM = 15
+const COMPACT_BELOW_ZOOM = 14
 /** Below this zoom, no area vehicles at all (only searched or selected ones). */
 const AREA_MIN_ZOOM = 11
 /** Accepts no new vehicles (a zero-size box in the sea off Africa). */
