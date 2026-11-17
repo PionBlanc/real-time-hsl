@@ -41,6 +41,9 @@ pauses when the tab is in the background.
 
 ## Digitransit API key
 
+> **Rules:** the terms of use, attribution, rate limits and MQTT guidance are summarised,
+> with links, in [docs/API-TERMS.md](docs/API-TERMS.md). Read it before changing anything in `/api`.
+
 Route paths, the line filter and the HSL map tiles need a free key from
 <https://portal-api.digitransit.fi/>. Set it as **`DIGITRANSIT_API_KEY`** in
 Vercel (Project → Settings → Environment Variables, for Production *and* Preview)
