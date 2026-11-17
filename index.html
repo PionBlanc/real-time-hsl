@@ -1,20 +1,57 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="/favicon.ico" />
-    <meta name="theme-color" content="#000000" />
-    <meta
-      name="description"
-      content="Real-time tracking of HSL public transport vehicles in Helsinki"
-    />
-    <link rel="apple-touch-icon" href="/logo192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#007AC9" />
+    <meta name="description" content="Live HSL vehicle positions around you" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
-    <title>HSL Real Time</title>
+    <link rel="preconnect" href="https://mqtt.hsl.fi" crossorigin />
+    <title>HSL Live</title>
   </head>
   <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div id="map"></div>
+
+    <div id="top">
+      <form id="search" role="search" autocomplete="off">
+        <span id="status" class="dot connecting" title="Connecting…"></span>
+        <input
+          id="q"
+          type="text"
+          inputmode="text"
+          enterkeyhint="search"
+          autocapitalize="characters"
+          spellcheck="false"
+          placeholder="Filter lines, e.g. 551 15"
+          aria-label="Filter lines"
+        />
+        <button type="button" id="clear" class="ib" hidden aria-label="Clear filter">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+        <button type="button" id="modesBtn" class="ib" aria-label="Vehicle types" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></svg>
+        </button>
+      </form>
+      <div id="modes" hidden>
+        <button type="button" data-mode="bus" aria-pressed="true">Bus</button>
+        <button type="button" data-mode="tram" aria-pressed="true">Tram</button>
+        <button type="button" data-mode="metro" aria-pressed="true">Metro</button>
+        <button type="button" data-mode="train" aria-pressed="true">Train</button>
+        <button type="button" data-mode="ferry" aria-pressed="true">Ferry</button>
+      </div>
+      <div id="hint" hidden></div>
+    </div>
+
+    <div id="bottom">
+      <button type="button" id="locate" aria-label="Show my location">
+        <svg viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="4" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /><circle cx="12" cy="12" r="8" /></svg>
+      </button>
+      <section id="card" hidden aria-live="polite"></section>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

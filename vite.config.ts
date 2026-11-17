@@ -1,49 +1,45 @@
-import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
-import { devtools } from '@tanstack/devtools-vite'
-import viteReact from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
+import type { Plugin, ViteDevServer } from 'vite'
 
-import { tanstackRouter } from '@tanstack/router-plugin/vite'
+/**
+ * Serves the Vercel edge functions in /api during `vite dev`, so local dev
+ * runs exactly the same code as production. Put DIGITRANSIT_API_KEY in .env.
+ */
+function vercelApiDev(): Plugin {
+  return {
+    name: 'vercel-api-dev',
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use(async (req, res, next) => {
+        const m = req.url?.match(/^\/api\/([a-z]+)(\?.*)?$/)
+        if (!m) return next()
+        try {
+          const mod = await server.ssrLoadModule(`/api/${m[1]}.ts`)
+          const resp: Response = await mod.default(
+            new Request(`http://localhost${req.url}`),
+          )
+          res.statusCode = resp.status
+          resp.headers.forEach((v, k) => res.setHeader(k, v))
+          res.end(Buffer.from(await resp.arrayBuffer()))
+        } catch (e) {
+          next(e)
+        }
+      })
+    },
+  }
+}
 
-// https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  // Load env file based on `mode` in the current working directory.
   const env = loadEnv(mode, process.cwd(), '')
+  // Make .env values visible to the /api handlers in dev.
+  if (env.DIGITRANSIT_API_KEY && !process.env.DIGITRANSIT_API_KEY) {
+    process.env.DIGITRANSIT_API_KEY = env.DIGITRANSIT_API_KEY
+  }
+  const hasKey = Boolean(process.env.DIGITRANSIT_API_KEY)
 
   return {
-    plugins: [
-      devtools(),
-      tanstackRouter({
-        target: 'react',
-        autoCodeSplitting: true,
-      }),
-      viteReact(),
-      tailwindcss(),
-    ],
-    resolve: {
-      alias: {
-        '@': fileURLToPath(new URL('./src', import.meta.url)),
-      },
-    },
-    server: {
-      preset: 'vercel',
-      proxy: {
-        '/api/digitransit': {
-          target: 'https://api.digitransit.fi',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/digitransit/, ''),
-          configure: (proxy) => {
-            proxy.on('proxyReq', (proxyReq) => {
-              // Add API key header on the server side - never exposed to client
-              const apiKey = env.DIGITRANSIT_API_KEY
-              if (apiKey) {
-                proxyReq.setHeader('digitransit-subscription-key', apiKey)
-              }
-            })
-          },
-        },
-      },
-    },
+    plugins: [vercelApiDev()],
+    // Only a boolean is baked into the bundle; the key itself never leaves the server.
+    define: { __HAS_KEY__: JSON.stringify(hasKey) },
+    build: { target: 'es2020', cssCodeSplit: false },
   }
 })

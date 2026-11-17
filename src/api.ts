@@ -1,0 +1,103 @@
+import { tripStartSeconds } from './hfp'
+import type { Msg } from './hfp'
+
+export interface TripStop {
+  id: string // without "HSL:"
+  name: string
+  code: string
+  lat: number
+  lng: number
+  t: number // scheduled departure, s since service-day midnight
+}
+
+export interface Trip {
+  headsign: string
+  name: string
+  shape: Array<[number, number]>
+  stops: Array<TripStop>
+}
+
+export class MissingKeyError extends Error {}
+
+export const tripKey = (m: Msg): string => `${m.route}|${m.dir}|${m.oday}|${m.start}`
+
+const tripCache = new Map<string, Promise<Trip | null>>()
+
+export function fetchTrip(m: Msg): Promise<Trip | null> {
+  const key = tripKey(m)
+  let p = tripCache.get(key)
+  if (!p) {
+    const time = tripStartSeconds(m.start, m.oday, m.tst)
+    const qs = new URLSearchParams({ route: m.route, dir: m.dir, date: m.oday, time: String(time) })
+    p = fetch(`/api/trip?${qs}`).then(async (r) => {
+      if (r.status === 503) throw new MissingKeyError()
+      if (r.status === 404) return null
+      if (!r.ok) throw new Error(`trip ${r.status}`)
+      const d = await r.json()
+      return {
+        headsign: d.h,
+        name: d.n,
+        shape: decodePolyline(d.g),
+        stops: d.s.map((s: [string, string, string, number, number, number]) => ({
+          id: s[0],
+          name: s[1],
+          code: s[2],
+          lat: s[3],
+          lng: s[4],
+          t: s[5],
+        })),
+      }
+    })
+    p.catch(() => tripCache.delete(key)) // allow retry after failures
+    tripCache.set(key, p)
+  }
+  return p
+}
+
+export interface RouteRef {
+  id: string
+  n: string
+  m: string
+}
+
+const routeCache = new Map<string, Promise<Array<RouteRef>>>()
+
+export function fetchRoutes(line: string): Promise<Array<RouteRef>> {
+  const key = line.toUpperCase()
+  let p = routeCache.get(key)
+  if (!p) {
+    p = fetch(`/api/routes?q=${encodeURIComponent(line)}`).then((r) => {
+      if (r.status === 503) throw new MissingKeyError()
+      if (!r.ok) throw new Error(`routes ${r.status}`)
+      return r.json()
+    })
+    p.catch(() => routeCache.delete(key))
+    routeCache.set(key, p)
+  }
+  return p
+}
+
+/** Google encoded polyline (precision 5) → [lat, lng][] */
+export function decodePolyline(s: string): Array<[number, number]> {
+  const out: Array<[number, number]> = []
+  let i = 0
+  let lat = 0
+  let lng = 0
+  while (i < s.length) {
+    for (let k = 0; k < 2; k++) {
+      let shift = 0
+      let result = 0
+      let b: number
+      do {
+        b = s.charCodeAt(i++) - 63
+        result |= (b & 0x1f) << shift
+        shift += 5
+      } while (b >= 0x20)
+      const d = result & 1 ? ~(result >> 1) : result >> 1
+      if (k === 0) lat += d
+      else lng += d
+    }
+    out.push([lat / 1e5, lng / 1e5])
+  }
+  return out
+}
