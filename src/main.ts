@@ -111,12 +111,12 @@ let trip: Trip | null = null
 let tripK = ''
 let tripNote = ''
 
-// One canvas for route lines and stop dots, so taps reach both.
+// One canvas for route lines, stop dots and zoomed-out vehicle dots, so taps reach all of them.
 const canvas = L.canvas({ tolerance: 10 })
 const tripLine = new TripLine(map, canvas, (s) => selectStop(s))
 const stopsLayer = new StopsLayer(map, canvas, (s) => selectStop(s))
 stopsLayer.modes = modes
-const vehicles = new Vehicles(map, (id) => select(id), onSelectedUpdate)
+const vehicles = new Vehicles(map, canvas, (id) => select(id), onSelectedUpdate)
 const isSearchedVehicle = (m: Msg) => vehNums.includes(+m.veh)
 vehicles.filter = (m) =>
   modes.has(m.mode) &&
@@ -143,6 +143,13 @@ const mqtt = new MqttClient(
   },
 )
 
+/** Below this zoom, vehicles in an area are drawn as plain dots (there can be 1000+). */
+const COMPACT_BELOW_ZOOM = 13
+/** Below this zoom, no area vehicles at all (only searched or selected ones). */
+const AREA_MIN_ZOOM = 11
+/** Accepts no new vehicles (a zero-size box in the sea off Africa). */
+const NOWHERE = L.latLngBounds([0, 0], [0, 0])
+
 /** Subscribe to exactly what's needed: the visible area, or the searched lines/vehicles anywhere. */
 function updateTopics(): void {
   const topics: Array<string> = vehNums.map(vehicleNumberFilter)
@@ -157,15 +164,26 @@ function updateTopics(): void {
     const box = { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() }
     // Close up: every update (~1/s per vehicle). Further out: only when a vehicle
     // moved ~100 m (geohash levels 0–3, ~12 % of the traffic).
-    if (z >= 13) topics.push(...areaFilters(box, 160))
-    else if (z >= 11) topics.push(...areaFilters(box, 160, [0, 1, 2, 3]))
+    if (z >= COMPACT_BELOW_ZOOM) topics.push(...areaFilters(box, 160))
+    else if (z >= AREA_MIN_ZOOM) topics.push(...areaFilters(box, 160, [0, 1, 2, 3]))
     else hint = 'Zoom in to see vehicles'
   }
   const sel = selected ? vehicles.get(selected) : undefined
   if (sel) topics.push(vehicleFilter(sel.oper, sel.veh))
   mqtt.setTopics(topics)
-  vehicles.area = lineMode ? null : map.getBounds().pad(0.5)
-  if (!lineMode) vehicles.prune(map.getBounds().pad(0.6))
+  if (lineMode) {
+    vehicles.area = null
+  } else if (z < AREA_MIN_ZOOM) {
+    // Area vehicles get no more updates: drop them now rather than letting them go stale.
+    vehicles.area = NOWHERE
+    vehicles.prune(null)
+  } else {
+    vehicles.area = map.getBounds().pad(0.5)
+    vehicles.prune(map.getBounds().pad(0.6))
+  }
+  // After pruning, so markers aren't rebuilt for vehicles that are about to go.
+  // Line searches are few vehicles: keep their labels at any zoom.
+  vehicles.setCompact(!lineMode && z < COMPACT_BELOW_ZOOM)
   setHint(hint)
 }
 

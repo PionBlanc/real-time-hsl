@@ -2,12 +2,20 @@ import L from 'leaflet'
 import { COLORS } from './hfp'
 import type { Msg } from './hfp'
 
-interface V {
-  msg: Msg
+/** Full marker: DOM element with line label, heading arrow and smooth movement. */
+interface Dom {
   marker: L.Marker
   el: HTMLElement
   label: HTMLElement
   arrow: HTMLElement
+}
+
+interface V {
+  msg: Msg
+  dom: Dom | null
+  /** Compact marker: a plain dot on the shared canvas, used when zoomed out. */
+  dot: L.CircleMarker | null
+  dotOpacity: number
   last: number
   stale: boolean
   rot: number | null // unwrapped heading, so 350°→10° turns 20°, not 340°
@@ -20,12 +28,17 @@ const REMOVE_MS = 120_000
 /**
  * Vehicle markers. Updates are batched per animation frame; movement between
  * 1 Hz updates is smoothed with a CSS transform transition (see styles.css).
+ *
+ * In compact mode (zoomed out, often 1000+ vehicles) they are drawn as dots on a
+ * canvas instead: one element instead of a DOM node per vehicle, no labels, no
+ * animation. The selected vehicle always keeps its full marker.
  */
 export class Vehicles {
   private all = new Map<string, V>()
   private pending = new Map<string, Msg>()
   private raf = 0
   private selected: string | null = null
+  private compact = false
   /** New vehicles outside this area are ignored (null = accept everything). */
   area: L.LatLngBounds | null = null
   filter: (m: Msg) => boolean = () => true
@@ -34,6 +47,7 @@ export class Vehicles {
 
   constructor(
     private map: L.Map,
+    private renderer: L.Renderer,
     private onClick: (id: string) => void,
     private onSelectedUpdate: (m: Msg) => void,
   ) {
@@ -53,6 +67,13 @@ export class Vehicles {
     if (!this.raf) this.raf = requestAnimationFrame(() => this.flush())
   }
 
+  /** Switch between full markers and canvas dots. */
+  setCompact(on: boolean): void {
+    if (on === this.compact) return
+    this.compact = on
+    for (const v of this.all.values()) this.render(v)
+  }
+
   private flush(): void {
     this.raf = 0
     const batch = this.pending
@@ -69,27 +90,59 @@ export class Vehicles {
     }
     if (!v) {
       if (!isSel && this.area && !this.anywhere(m) && !this.area.contains([m.lat, m.lng])) return
-      v = this.create(m)
-    } else {
-      v.marker.setLatLng([m.lat, m.lng])
-      if (v.msg.desi !== m.desi) v.label.textContent = m.desi || '?'
+      v = { msg: m, dom: null, dot: null, dotOpacity: 1, last: 0, stale: false, rot: null, sameLine: false }
+      v.sameLine = this.isSameLine(m.id, m)
+      this.all.set(m.id, v)
     }
-    // Heading is noise while standing still; keep the last good one.
-    if (m.hdg != null && (m.spd ?? 0) > 0.5) {
-      v.rot = v.rot == null ? m.hdg : v.rot + ((((m.hdg - v.rot) % 360) + 540) % 360) - 180
-      v.arrow.style.setProperty('--h', `${v.rot}deg`)
-      v.arrow.style.display = ''
-    }
+    const prevDesi = v.msg.desi
+    const wasStale = v.stale
     v.msg = m
     v.last = Date.now()
-    if (v.stale) {
-      v.stale = false
-      v.el.classList.remove('stale')
+    v.stale = false
+    // Heading is noise while standing still; keep the last good one.
+    const turned = m.hdg != null && (m.spd ?? 0) > 0.5
+    if (turned) v.rot = v.rot == null ? m.hdg! : v.rot + ((((m.hdg! - v.rot) % 360) + 540) % 360) - 180
+
+    if (v.dom) {
+      v.dom.marker.setLatLng([m.lat, m.lng])
+      if (prevDesi !== m.desi) v.dom.label.textContent = m.desi || '?'
+      if (turned) this.setArrow(v.dom, v.rot)
+      if (wasStale) v.dom.el.classList.remove('stale')
+    } else if (v.dot) {
+      v.dot.setLatLng([m.lat, m.lng])
+      if (wasStale) this.styleDot(v)
+    } else {
+      this.render(v) // new vehicle
     }
     if (isSel) this.onSelectedUpdate(m)
   }
 
-  private create(m: Msg): V {
+  private isSameLine(id: string, m: Msg): boolean {
+    const sel = this.selected ? this.all.get(this.selected) : undefined
+    return !!sel && id !== this.selected && m.desi.toUpperCase() === sel.msg.desi.toUpperCase()
+  }
+
+  /** Give v the right kind of marker for the current mode, styled for its current state. */
+  private render(v: V): void {
+    if (!this.compact || v.msg.id === this.selected) {
+      if (v.dot) {
+        v.dot.remove()
+        v.dot = null
+      }
+      v.dom ??= this.createDom(v)
+      this.styleDom(v)
+    } else {
+      if (v.dom) {
+        v.dom.marker.remove()
+        v.dom = null
+      }
+      v.dot ??= this.createDot(v)
+      this.styleDot(v)
+    }
+  }
+
+  private createDom(v: V): Dom {
+    const m = v.msg
     const wrap = document.createElement('span')
     wrap.className = 'w'
     wrap.style.setProperty('--c', COLORS[m.mode])
@@ -108,50 +161,63 @@ export class Vehicles {
     })
     marker.on('click', () => this.onClick(m.id))
     marker.addTo(this.map)
-    const el = marker.getElement()!
-    const v: V = { msg: m, marker, el, label, arrow, last: Date.now(), stale: false, rot: null, sameLine: false }
-    this.all.set(m.id, v)
-    if (m.id === this.selected) {
-      el.classList.add('sel')
-      marker.setZIndexOffset(10000)
-    } else if (this.selected) {
-      const sel = this.all.get(this.selected)
-      if (sel && m.desi.toUpperCase() === sel.msg.desi.toUpperCase()) {
-        v.sameLine = true
-        el.classList.add('same-line')
-      }
-    }
-    return v
+    const dom = { marker, el: marker.getElement()!, label, arrow }
+    this.setArrow(dom, v.rot)
+    return dom
+  }
+
+  private setArrow(dom: Dom, rot: number | null): void {
+    if (rot == null) return
+    dom.arrow.style.setProperty('--h', `${rot}deg`)
+    dom.arrow.style.display = ''
+  }
+
+  private styleDom(v: V): void {
+    const d = v.dom!
+    const sel = v.msg.id === this.selected
+    d.el.classList.toggle('sel', sel)
+    d.el.classList.toggle('same-line', v.sameLine)
+    d.el.classList.toggle('stale', v.stale)
+    d.marker.setZIndexOffset(sel ? 10000 : 0)
+  }
+
+  private createDot(v: V): L.CircleMarker {
+    const id = v.msg.id
+    v.dotOpacity = 1
+    return L.circleMarker([v.msg.lat, v.msg.lng], {
+      renderer: this.renderer,
+      radius: 4,
+      weight: 1.5,
+      color: '#fff',
+      fillColor: COLORS[v.msg.mode],
+      fillOpacity: 1,
+      bubblingMouseEvents: false, // don't also trigger the map's "close" click
+    })
+      .on('click', () => this.onClick(id))
+      .addTo(this.map)
+  }
+
+  /** Same dimming rules as the CSS for full markers (stale, other lines while one is selected). */
+  private styleDot(v: V): void {
+    const o = v.stale ? 0.4 : this.selected && !v.sameLine ? 0.3 : 1
+    if (o === v.dotOpacity) return
+    v.dotOpacity = o
+    v.dot!.setStyle({ opacity: o, fillOpacity: o })
   }
 
   private remove(id: string): void {
     const v = this.all.get(id)
     if (!v) return
-    v.marker.remove()
+    v.dom?.marker.remove()
+    v.dot?.remove()
     this.all.delete(id)
   }
 
   setSelected(id: string | null): void {
-    const prev = this.selected && this.all.get(this.selected)
-    if (prev) {
-      prev.el.classList.remove('sel')
-      prev.marker.setZIndexOffset(0)
-    }
     this.selected = id
-    const cur = id ? this.all.get(id) : undefined
-    const selectedLine = cur?.msg.desi.toUpperCase()
-
     for (const [vid, v] of this.all) {
-      const isSameLine = !!(selectedLine && v.msg.desi.toUpperCase() === selectedLine && vid !== id)
-      if (isSameLine !== v.sameLine) {
-        v.sameLine = isSameLine
-        v.el.classList.toggle('same-line', isSameLine)
-      }
-    }
-
-    if (cur) {
-      cur.el.classList.add('sel')
-      cur.marker.setZIndexOffset(10000)
+      v.sameLine = this.isSameLine(vid, v.msg)
+      this.render(v) // the (de)selected vehicle may switch between dot and full marker
     }
   }
 
@@ -161,18 +227,21 @@ export class Vehicles {
       if (id !== this.selected && !this.filter(v.msg)) this.remove(id)
   }
 
-  /** Drop vehicles outside the given bounds (they no longer get updates). */
-  prune(bounds: L.LatLngBounds): void {
+  /** Drop vehicles outside the given bounds (they no longer get updates); null drops all. */
+  prune(bounds: L.LatLngBounds | null): void {
     for (const [id, v] of this.all)
-      if (id !== this.selected && !this.anywhere(v.msg) && !bounds.contains([v.msg.lat, v.msg.lng]))
+      if (id !== this.selected && !this.anywhere(v.msg) && !bounds?.contains([v.msg.lat, v.msg.lng]))
         this.remove(id)
   }
 
   markAllStale(): void {
-    for (const v of this.all.values()) {
-      v.stale = true
-      v.el.classList.add('stale')
-    }
+    for (const v of this.all.values()) this.setStale(v)
+  }
+
+  private setStale(v: V): void {
+    v.stale = true
+    if (v.dom) v.dom.el.classList.add('stale')
+    else if (v.dot) this.styleDot(v)
   }
 
   private sweep(): void {
@@ -180,10 +249,7 @@ export class Vehicles {
     for (const [id, v] of this.all) {
       const age = now - v.last
       if (age > REMOVE_MS && id !== this.selected) this.remove(id)
-      else if (age > STALE_MS && !v.stale) {
-        v.stale = true
-        v.el.classList.add('stale')
-      }
+      else if (age > STALE_MS && !v.stale) this.setStale(v)
     }
   }
 }
