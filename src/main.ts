@@ -14,6 +14,7 @@ import {
   parseMessage,
   routeFilter,
   vehicleFilter,
+  vehicleNumberFilter,
 } from './hfp'
 import type { Mode, Msg } from './hfp'
 import { Vehicles } from './vehicles'
@@ -89,7 +90,10 @@ map.on('zoomend', () =>
 // ---------------------------------------------------------------- state
 
 let modes = new Set<Mode>((store.get<Array<Mode>>('modes') ?? MODES).filter((m) => MODES.includes(m)))
-let lines: Array<string> = parseLines(new URL(location.href).searchParams.get('line') ?? '')
+// Search terms: line numbers ("551") and vehicle side numbers ("#1234").
+let terms: Array<string> = parseTerms(new URL(location.href).searchParams.get('line') ?? '')
+let lines = terms.filter((t) => !t.startsWith('#'))
+let vehNums = terms.filter((t) => t.startsWith('#')).map((t) => +t.slice(1))
 let lineRoutes: Array<string> | null = null // resolved HFP route ids for `lines`
 let selected: string | null = null
 let followVehicle = false
@@ -102,7 +106,11 @@ let tripNote = ''
 
 const tripLine = new TripLine(map)
 const vehicles = new Vehicles(map, (id) => select(id), onSelectedUpdate)
-vehicles.filter = (m) => modes.has(m.mode) && (lines.length === 0 || lines.includes(m.desi.toUpperCase()))
+const isSearchedVehicle = (m: Msg) => vehNums.includes(+m.veh)
+vehicles.filter = (m) =>
+  modes.has(m.mode) &&
+  (terms.length === 0 || lines.includes(m.desi.toUpperCase()) || isSearchedVehicle(m))
+vehicles.anywhere = isSearchedVehicle
 
 // ---------------------------------------------------------------- live data
 
@@ -124,14 +132,15 @@ const mqtt = new MqttClient(
   },
 )
 
-/** Subscribe to exactly what's needed: the visible area, or the filtered lines anywhere. */
+/** Subscribe to exactly what's needed: the visible area, or the searched lines/vehicles anywhere. */
 function updateTopics(): void {
-  const topics: Array<string> = []
+  const topics: Array<string> = vehNums.map(vehicleNumberFilter)
   const z = map.getZoom()
   let hint = ''
-  const lineMode = lines.length > 0 && lineRoutes !== null
+  // Without resolved route ids, line search falls back to filtering the visible area.
+  const lineMode = terms.length > 0 && (lines.length === 0 || lineRoutes !== null)
   if (lineMode) {
-    topics.push(...lineRoutes!.map(routeFilter))
+    if (lineRoutes) topics.push(...lineRoutes.map(routeFilter))
   } else {
     const b = map.getBounds().pad(0.15)
     const box = { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() }
@@ -241,7 +250,9 @@ function renderCard(m: Msg): void {
           ? 'Stopped · doors open'
           : 'Stopped'
         : `${Math.round(m.spd * 3.6)} km/h`
-  const meta = [d.text && `<span class="${d.cls}">${d.text}</span>`, speed].filter(Boolean).join(' · ')
+  const meta = [d.text && `<span class="${d.cls}">${d.text}</span>`, speed, `#${+m.veh}`]
+    .filter(Boolean)
+    .join(' · ')
 
   let stops = ''
   if (trip) {
@@ -360,15 +371,22 @@ locateBtn.addEventListener('click', () => {
 const q = $<HTMLInputElement>('q')
 const clearBtn = $('clear')
 
-function parseLines(s: string): Array<string> {
-  return [...new Set(s.toUpperCase().split(/[\s,]+/).filter((t) => /^[0-9A-Z]{1,8}$/.test(t)))]
+function parseTerms(s: string): Array<string> {
+  const out = s
+    .toUpperCase()
+    .split(/[\s,]+/)
+    .filter((t) => /^[0-9A-Z]{1,8}$/.test(t) || /^#\d{1,5}$/.test(t))
+    .map((t) => (t.startsWith('#') ? `#${+t.slice(1)}` : t))
+  return [...new Set(out)]
 }
 
 function applyQuery(): void {
-  const next = parseLines(q.value)
+  const next = parseTerms(q.value)
   clearBtn.hidden = q.value === ''
-  if (next.join() === lines.join() && (lineRoutes || !next.length)) return
-  lines = next
+  if (next.join() === terms.join() && (lineRoutes || !lines.length)) return
+  terms = next
+  lines = next.filter((t) => !t.startsWith('#'))
+  vehNums = next.filter((t) => t.startsWith('#')).map((t) => +t.slice(1))
   lineRoutes = null
   const u = new URL(location.href)
   if (next.length) u.searchParams.set('line', next.join(','))
@@ -376,14 +394,23 @@ function applyQuery(): void {
   history.replaceState(null, '', u)
   vehicles.refilter()
   updateTopics()
-  if (next.length) resolveLines(next)
+  startSearch()
+}
+
+function startSearch(): void {
+  if (lines.length) resolveLines(lines)
+  else if (vehNums.length) {
+    const want = terms
+    setTimeout(() => fitIfNoneVisible(want), 2500)
+  }
 }
 
 function resolveLines(want: Array<string>): void {
   if (!__HAS_KEY__) return // filter only within the visible area
+  const wantTerms = terms
   Promise.all(want.map(fetchRoutes))
     .then((rs) => {
-      if (lines.join() !== want.join()) return
+      if (terms !== wantTerms) return
       const ids = [...new Set(rs.flat().map((r) => r.id))]
       if (!ids.length) {
         toast(`No line ${want.join(', ')}`)
@@ -391,14 +418,14 @@ function resolveLines(want: Array<string>): void {
       }
       lineRoutes = ids
       updateTopics()
-      setTimeout(() => fitIfNoneVisible(want), 2500)
+      setTimeout(() => fitIfNoneVisible(wantTerms), 2500)
     })
     .catch(() => {}) // fall back to filtering the visible area
 }
 
-/** If none of the filtered vehicles are on screen, zoom out to show them. */
+/** If none of the searched vehicles are on screen, zoom out to show them. */
 function fitIfNoneVisible(want: Array<string>): void {
-  if (lines.join() !== want.join() || selected) return
+  if (terms !== want || selected) return
   const vs = vehicles.visible()
   if (!vs.length) {
     toast(`No ${want.join(', ')} running right now`)
@@ -427,16 +454,13 @@ clearBtn.addEventListener('click', () => {
   applyQuery()
 })
 
-const modesBtn = $('modesBtn')
 const modesEl = $('modes')
-modesBtn.addEventListener('click', () => {
-  modesEl.hidden = !modesEl.hidden
-  modesBtn.setAttribute('aria-expanded', String(!modesEl.hidden))
-})
 function renderModes(): void {
-  modesEl.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
-    b.setAttribute('aria-pressed', String(modes.has(b.dataset.mode as Mode))),
-  )
+  modesEl.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => {
+    const on = modes.has(b.dataset.mode as Mode)
+    b.setAttribute('aria-pressed', String(on))
+    b.title = `${on ? 'Hide' : 'Show'} ${b.textContent!.trim().toLowerCase()}s`
+  })
 }
 modesEl.addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-mode]')
@@ -487,13 +511,13 @@ document.addEventListener('visibilitychange', () => {
   }
 })
 
-q.value = lines.join(' ')
-clearBtn.hidden = !lines.length
+q.value = terms.join(' ')
+clearBtn.hidden = !terms.length
 renderModes()
 updateTopics()
 mqtt.start()
 startGps()
-if (lines.length) resolveLines(lines)
+startSearch()
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}))

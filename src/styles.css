@@ -127,19 +127,45 @@ svg {
 [hidden] {
   display: none !important;
 }
+#modes {
+  align-items: center;
+}
+#modes .lbl {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.85);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
 #modes button {
-  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1.5px solid #cfd6dd;
   border-radius: 16px;
-  padding: 6px 12px;
+  padding: 5px 11px;
   font-weight: 600;
   font-size: 14px;
   background: #fff;
   color: var(--muted);
   box-shadow: var(--shadow);
 }
+#modes button svg {
+  display: none;
+  stroke-width: 3;
+}
+#modes button[aria-pressed='false'] {
+  text-decoration: line-through;
+}
 #modes button[aria-pressed='true'] {
   background: var(--c);
+  border-color: var(--c);
   color: #fff;
+  padding-left: 8px;
+}
+#modes button[aria-pressed='true'] svg {
+  display: block;
 }
 #modes [data-mode='bus'] { --c: #007ac9; }
 #modes [data-mode='tram'] { --c: #00985f; }

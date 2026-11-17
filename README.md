@@ -9,7 +9,10 @@ moving in real time.
   next stops with ETAs. The map follows it until you pan.
 - **Type a line** (`551`, `15 9`, `M1`) to see that line's vehicles anywhere in
   the region. The filter is kept in the URL (`/?line=551`), so you can bookmark it.
-- **Sliders button**: show/hide vehicle types.
+- **Type a vehicle number** (`#1234`, the *kylkinumero* on the side of the bus) to
+  find that vehicle anywhere. Operators can share numbers, so there may be more than one.
+  Combine with lines: `551 #1234`.
+- **Show chips** under the search bar: tap Bus / Tram / … to hide or show that type.
 - **Crosshair**: back to your location.
 
 ## How it works

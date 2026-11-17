@@ -29,6 +29,8 @@ export class Vehicles {
   /** New vehicles outside this area are ignored (null = accept everything). */
   area: L.LatLngBounds | null = null
   filter: (m: Msg) => boolean = () => true
+  /** Vehicles kept regardless of `area` (e.g. searched by vehicle number). */
+  anywhere: (m: Msg) => boolean = () => false
 
   constructor(
     private map: L.Map,
@@ -66,7 +68,7 @@ export class Vehicles {
       return
     }
     if (!v) {
-      if (!isSel && this.area && !this.area.contains([m.lat, m.lng])) return
+      if (!isSel && this.area && !this.anywhere(m) && !this.area.contains([m.lat, m.lng])) return
       v = this.create(m)
     } else {
       v.marker.setLatLng([m.lat, m.lng])
@@ -162,7 +164,8 @@ export class Vehicles {
   /** Drop vehicles outside the given bounds (they no longer get updates). */
   prune(bounds: L.LatLngBounds): void {
     for (const [id, v] of this.all)
-      if (id !== this.selected && !bounds.contains([v.msg.lat, v.msg.lng])) this.remove(id)
+      if (id !== this.selected && !this.anywhere(v.msg) && !bounds.contains([v.msg.lat, v.msg.lng]))
+        this.remove(id)
   }
 
   markAllStale(): void {

@@ -158,6 +158,10 @@ export const routeFilter = (routeId: string): string => `${BASE}/+/+/+/${routeId
 export const vehicleFilter = (oper: string, veh: string): string =>
   `${BASE}/+/${oper}/${veh}/#`
 
+/** Vehicles with this side number (kylkinumero) at any operator. */
+export const vehicleNumberFilter = (n: number): string =>
+  `${BASE}/+/+/${String(n).padStart(5, '0')}/#`
+
 // ---------- time helpers (Helsinki local time) ----------
 
 const dateFmt = new Intl.DateTimeFormat('en-CA', {
