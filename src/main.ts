@@ -217,7 +217,6 @@ map.on('dragstart', () => {
   followMe = false
   followVehicle = false
   $('locate').classList.remove('on')
-  document.querySelector('#card .fol')?.classList.remove('on')
 })
 function closeAll(): void {
   selectStop(null)
@@ -260,8 +259,21 @@ function announce(t: string): void {
 
 // ---------------------------------------------------------------- selection
 
+/**
+ * Select a vehicle (null = none). The map follows the selected vehicle until the user
+ * drags it; selecting the same vehicle again re-centres on it and resumes following.
+ */
 function select(id: string | null): void {
-  if (selected === id) return
+  if (selected === id) {
+    const m = id && vehicles.get(id)
+    if (m) {
+      followVehicle = true
+      followMe = false
+      $('locate').classList.remove('on')
+      map.panTo([m.lat, m.lng])
+    }
+    return
+  }
   selected = id
   if (id && stopSel) selectStop(null)
   vehicles.setSelected(id)
@@ -363,7 +375,6 @@ function renderCard(m: Msg): void {
     <div class="ch">
       <span class="badge ${modeClass(m.mode)}">${escapeHtml(m.desi || '?')}</span>
       <div class="dest"><b>${escapeHtml(dest ? `→ ${dest}` : m.desi)}</b><small>${meta}</small></div>
-      <button type="button" class="fol${followVehicle ? ' on' : ''}" data-act="follow" aria-pressed="${followVehicle}">Follow</button>
       <button type="button" class="ib" data-act="close" aria-label="Close">
         <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
@@ -378,14 +389,6 @@ $('card').addEventListener('click', (e) => {
   if (act === 'close') closeAll()
   if (act === 'veh' && el?.dataset.id) select(el.dataset.id)
   if (act === 'more') loadMore()
-  if (act === 'follow' && selected) {
-    followVehicle = !followVehicle
-    const m = vehicles.get(selected)
-    if (m) {
-      if (followVehicle) map.panTo([m.lat, m.lng])
-      renderCard(m)
-    }
-  }
 })
 
 $('card').addEventListener('keydown', (e) => {
@@ -688,7 +691,6 @@ locateBtn.addEventListener('click', () => {
     followMe = true
     followVehicle = false
     locateBtn.classList.add('on')
-    document.querySelector('#card .fol')?.classList.remove('on')
     map.setView(gps, Math.max(map.getZoom(), 15))
   } else if (locateBtn.classList.contains('denied')) {
     toast('Location is blocked – allow it in your browser settings')
