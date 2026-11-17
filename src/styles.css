@@ -303,6 +303,12 @@ svg {
 }
 
 /* ---------- stop departures board (styled like a stop's live display) ---------- */
+/* Header stays put; the departure list scrolls further into the future. */
+#card:has(> .board) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .board {
   list-style: none;
   margin: 10px 0 0;
@@ -310,6 +316,37 @@ svg {
   background: #0f2236;
   border-radius: 10px;
   color: #fff;
+  min-height: 0;
+  max-height: 320px; /* ~8 rows; the cut-off row hints that it scrolls */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.board li.day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #0f2236;
+  padding: 8px 0 5px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8fd3ff;
+}
+.board li.more {
+  justify-content: center;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+}
+.board li.more button {
+  font: inherit;
+  font-weight: 600;
+  color: #8fd3ff;
+  background: none;
+  border: 1px solid rgba(143, 211, 255, 0.4);
+  border-radius: 14px;
+  padding: 4px 12px;
+  cursor: pointer;
 }
 .board li {
   display: flex;

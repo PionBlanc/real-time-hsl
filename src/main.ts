@@ -21,7 +21,7 @@ import {
 import type { Mode, Msg } from './hfp'
 import { Vehicles } from './vehicles'
 import { TripLine, escapeHtml } from './trip-line'
-import { MissingKeyError, fetchRoutes, fetchStopBoard, fetchTrip, tripKey } from './api'
+import { MissingKeyError, departureKey, fetchRoutes, fetchStopBoard, fetchTrip, tripKey } from './api'
 import type { Departure, StopBoard, StopRef, Trip } from './api'
 import { StopsLayer } from './stops'
 
@@ -62,6 +62,10 @@ const map = L.map(mapEl, { zoomControl: false, minZoom: 8, maxZoom: 18 }).setVie
   start[2],
 )
 map.attributionControl.setPrefix(false)
+// Required by the Digitransit terms (CC BY 4.0): credit Digitransit plus the year. See docs/API-TERMS.md.
+map.attributionControl.addAttribution(
+  `Data © <a href="https://digitransit.fi/en/developers/apis/7-terms-of-use/">Digitransit</a> ${new Date().getFullYear()}`,
+)
 
 const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } })
   .connection
@@ -308,6 +312,7 @@ $('card').addEventListener('click', (e) => {
   const act = el?.dataset.act
   if (act === 'close') closeAll()
   if (act === 'veh' && el?.dataset.id) select(el.dataset.id)
+  if (act === 'more') loadMore()
   if (act === 'follow' && selected) {
     followVehicle = !followVehicle
     const m = vehicles.get(selected)
@@ -333,6 +338,13 @@ let board: StopBoard | null = null
 let boardNote = ''
 let boardSeq = 0
 let boardTimer: ReturnType<typeof setInterval> | undefined
+// Scrolling the board pages further into the future.
+const PAGE = 20
+const MAX_DEPARTURES = 200
+let stopGen = 0
+let boardMore = true // more departures may exist after the loaded ones
+let loadingMore = false
+let moreFailed = false
 
 function selectStop(s: StopRef | null): void {
   if (s && stopSel?.id === s.id) return
@@ -341,6 +353,10 @@ function selectStop(s: StopRef | null): void {
   board = null
   boardNote = ''
   boardSeq++
+  stopGen++
+  boardMore = true
+  loadingMore = false
+  moreFailed = false
   clearInterval(boardTimer)
   stopsLayer.setSelected(s && Number.isFinite(s.lat) ? s : null)
   const u = new URL(location.href)
@@ -364,14 +380,20 @@ function loadBoard(): void {
   const s = stopSel
   if (!s || document.hidden) return
   const seq = ++boardSeq
-  fetchStopBoard(s.id)
+  fetchStopBoard(s.id, PAGE)
     .then((b) => {
       if (seq !== boardSeq) return
       if (!b) {
         boardNote = 'Stop not found.'
         return
       }
-      board = b
+      // Fresh realtime estimates for the first page; keep later pages the user scrolled to.
+      const last = b.departures[b.departures.length - 1]
+      const keys = new Set(b.departures.map(departureKey))
+      const later =
+        board && last ? board.departures.filter((d) => d.sched > last.sched && !keys.has(departureKey(d))) : []
+      if (!board) boardMore = b.departures.length >= PAGE
+      board = { ...b, departures: [...b.departures, ...later].sort((x, y) => x.at - y.at) }
       boardNote = ''
       if (!Number.isFinite(s.lat)) {
         // Opened from a ?stop= link: now we know where it is.
@@ -395,6 +417,42 @@ function loadBoard(): void {
       if (seq === boardSeq) renderBoard()
     })
 }
+
+/** Fetch the next page of departures after the last loaded one. */
+function loadMore(): void {
+  const s = stopSel
+  if (!s || !board || !boardMore || loadingMore || board.departures.length >= MAX_DEPARTURES) return
+  const gen = stopGen
+  const deps = board.departures
+  // Page from the latest scheduled time we have; overlap at that second is deduplicated.
+  const start = Math.max(Math.max(...deps.map((d) => d.sched)), Date.now() / 1000)
+  loadingMore = true
+  moreFailed = false
+  renderBoard()
+  fetchStopBoard(s.id, PAGE, start)
+    .then((b) => {
+      if (gen !== stopGen || !board) return
+      const keys = new Set(board.departures.map(departureKey))
+      const add = (b?.departures ?? []).filter((d) => !keys.has(departureKey(d)))
+      if (!add.length || (b?.departures.length ?? 0) < PAGE) boardMore = false
+      board = { ...board, departures: [...board.departures, ...add].sort((x, y) => x.at - y.at) }
+    })
+    .catch(() => {
+      if (gen === stopGen) moreFailed = true
+    })
+    .finally(() => {
+      if (gen !== stopGen) return
+      loadingMore = false
+      renderBoard()
+    })
+}
+
+const dayFmt = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Helsinki',
+  weekday: 'long',
+  day: 'numeric',
+  month: 'numeric',
+})
 
 /** The live vehicle running this departure, if it's on the map. */
 function vehicleFor(d: Departure, live: Array<Msg>): Msg | undefined {
@@ -438,11 +496,28 @@ function renderBoard(): void {
   const s = board?.stop ?? stopSel
   const nowS = Date.now() / 1000
   const live = vehicles.visible()
-  const rows = (board?.departures ?? [])
-    .filter((d) => d.at - nowS > -30)
-    .slice(0, 8)
-    .map((d) => departureRow(d, nowS, live))
-    .join('')
+  // Separate rows by calendar day, so 00:20 after a 23:50 isn't ambiguous.
+  const today = helsinkiDate(new Date())
+  const tomorrow = helsinkiDate(new Date(Date.now() + 86_400_000))
+  let day = today
+  let rows = ''
+  for (const d of board?.departures ?? []) {
+    if (d.at - nowS <= -30) continue
+    const dDay = helsinkiDate(new Date(d.at * 1000))
+    if (dDay !== day) {
+      day = dDay
+      rows += `<li class="day">${dDay === tomorrow ? 'Tomorrow' : escapeHtml(dayFmt.format(new Date(d.at * 1000)))}</li>`
+    }
+    rows += departureRow(d, nowS, live)
+  }
+  if (rows && board) {
+    if (loadingMore) rows += '<li class="more">Loading later departures…</li>'
+    else if (moreFailed)
+      rows += '<li class="more"><button type="button" data-act="more">Couldn’t load more, try again</button></li>'
+    else if (boardMore && board.departures.length < MAX_DEPARTURES)
+      rows += '<li class="more"><button type="button" data-act="more">Show later departures</button></li>'
+    else if (!boardMore) rows += '<li class="more">No later departures</li>'
+  }
 
   const now = clock(nowServiceSeconds(helsinkiDate(new Date())))
   const meta = [s.code, board?.platform ? `Platform ${board.platform}` : '', now]
@@ -454,7 +529,9 @@ function renderBoard(): void {
   else if (board) body = '<p class="note">No departures in the next 24 hours.</p>'
   else if (!boardNote) body = '<p class="note">Loading departures…</p>'
 
-  $('card').innerHTML = `
+  const card = $('card')
+  const scroll = card.querySelector('.board')?.scrollTop ?? 0
+  card.innerHTML = `
     <div class="ch">
       <span class="badge" style="background:${s.mode ? COLORS[s.mode] : '#5d6874'}" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="20" height="20"><rect x="6" y="3" width="12" height="10" rx="2"/><path d="M12 13v8M9 21h6"/></svg>
@@ -466,7 +543,19 @@ function renderBoard(): void {
     </div>
     ${body}
     ${boardNote ? `<p class="note">${escapeHtml(boardNote)}</p>` : ''}`
+  const list = card.querySelector('.board')
+  if (list) list.scrollTop = scroll
 }
+
+// Load later departures as the board is scrolled near its end (scroll doesn't bubble: capture).
+$('card').addEventListener(
+  'scroll',
+  (e) => {
+    const el = e.target as HTMLElement
+    if (el.classList?.contains('board') && el.scrollTop + el.clientHeight > el.scrollHeight - 150) loadMore()
+  },
+  true,
+)
 
 // ---------------------------------------------------------------- GPS
 

@@ -1,13 +1,14 @@
-// GET /api/stop?id=1130446
+// GET /api/stop?id=1130446[&start=<unix s>&n=<count>]
 // Next departures from one stop, with realtime estimates where available ("bus-stop screen").
+// `start` pages further into the future (departures at or after that time).
 import { apiKey, graphql, json, noKey } from './_digitransit'
 
 export const config = { runtime: 'edge' }
 
-const QUERY = `query($id:String!){
+const QUERY = `query($id:String!,$start:Long!,$n:Int!){
   stop(id:$id){
     name code platformCode lat lon vehicleMode
-    stoptimesWithoutPatterns(numberOfDepartures:12,omitNonPickups:true,omitCanceled:false){
+    stoptimesWithoutPatterns(startTime:$start,numberOfDepartures:$n,omitNonPickups:true,omitCanceled:false){
       serviceDay scheduledDeparture realtimeDeparture realtime realtimeState headsign
       trip{ directionId route{gtfsId shortName mode} departureStoptime{scheduledDeparture} }
     }
@@ -41,10 +42,23 @@ interface Resp {
 export default async function handler(req: Request): Promise<Response> {
   const key = apiKey()
   if (!key) return noKey()
-  const id = new URL(req.url).searchParams.get('id') ?? ''
-  if (!/^[0-9A-Za-z_]{1,20}$/.test(id)) return json({ error: 'bad_request' }, 400, 'no-store')
+  const q = new URL(req.url).searchParams
+  const id = q.get('id') ?? ''
+  const startS = q.get('start')
+  const start = startS == null ? 0 : Number(startS) // 0 = now
+  const n = Number(q.get('n') ?? 20)
+  const nowS = Date.now() / 1000
+  if (
+    !/^[0-9A-Za-z_]{1,20}$/.test(id) ||
+    !Number.isInteger(start) ||
+    (start !== 0 && (start < nowS - 3600 || start > nowS + 7 * 86400)) ||
+    !Number.isInteger(n) ||
+    n < 1 ||
+    n > 50
+  )
+    return json({ error: 'bad_request' }, 400, 'no-store')
   try {
-    const d = await graphql<Resp>(key, QUERY, { id: `HSL:${id}` })
+    const d = await graphql<Resp>(key, QUERY, { id: `HSL:${id}`, start, n })
     const s = d.stop
     if (!s) return json({ error: 'not_found' }, 404, 'public, s-maxage=3600')
     return json(

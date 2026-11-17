@@ -126,8 +126,16 @@ export interface StopBoard {
   departures: Array<Departure>
 }
 
-export async function fetchStopBoard(id: string): Promise<StopBoard | null> {
-  const r = await fetch(`/api/stop?id=${encodeURIComponent(id)}`)
+/** Same departure across fetches (realtime estimates change, these don't). */
+export function departureKey(d: Departure): string {
+  return `${d.route}|${d.dir}|${d.date}|${d.start}|${d.sched}`
+}
+
+/** Next `n` departures from now, or from `start` (unix s) when paging further ahead. */
+export async function fetchStopBoard(id: string, n: number, start?: number): Promise<StopBoard | null> {
+  const r = await fetch(
+    `/api/stop?id=${encodeURIComponent(id)}&n=${n}${start != null ? `&start=${Math.floor(start)}` : ''}`,
+  )
   if (r.status === 503) throw new MissingKeyError()
   if (r.status === 404) return null
   if (!r.ok) throw new Error(`stop ${r.status}`)
