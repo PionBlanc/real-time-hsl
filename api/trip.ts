@@ -1,6 +1,6 @@
 // GET /api/trip?route=2551&dir=1&date=2026-11-17&time=61200
 // Resolves a live HFP vehicle to its GTFS trip: path geometry + stops with scheduled times.
-import { apiKey, badRequest, canonicalInt, graphql, guard, json, noKey } from './_digitransit'
+import { apiKey, badRequest, canonicalInt, graphql, guard, json, noKey, upstreamError } from './_digitransit'
 
 export const config = { runtime: 'edge' }
 
@@ -76,6 +76,6 @@ export default async function handler(req: Request): Promise<Response> {
       'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400',
     )
   } catch (e) {
-    return json({ error: 'upstream', detail: String(e) }, 502, 'no-store')
+    return upstreamError('trip', e)
   }
 }

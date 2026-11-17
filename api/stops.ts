@@ -1,6 +1,6 @@
 // GET /api/stops?la=3008&lo=623
 // All stops in one fixed grid cell (CELL_LAT x CELL_LON degrees), so responses cache well.
-import { apiKey, badRequest, canonicalInt, graphql, guard, json, noKey } from './_digitransit'
+import { apiKey, badRequest, canonicalInt, graphql, guard, json, noKey, upstreamError } from './_digitransit'
 
 export const config = { runtime: 'edge' }
 
@@ -46,6 +46,6 @@ export default async function handler(req: Request): Promise<Response> {
       .map((s) => [s.gtfsId.slice(4), s.name, s.code ?? '', s.lat, s.lon, s.vehicleMode ?? ''])
     return json(out, 200, 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800')
   } catch (e) {
-    return json({ error: 'upstream', detail: String(e) }, 502, 'no-store')
+    return upstreamError('stops', e)
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { areaFilters, clock, delayText, parseMessage, routeFilter, tripStartSeconds, vehicleFilter } from './hfp'
+import { areaFilters, clock, delayText, parseMessage, routeFilter, topicModes, tripStartSeconds, vehicleFilter } from './hfp'
 import { decodePolyline } from './api'
 
 const enc = new TextEncoder()
@@ -82,5 +82,25 @@ describe('time helpers', () => {
       [40.7, -120.95],
       [43.252, -126.453],
     ])
+  })
+})
+
+describe('topicModes', () => {
+  it('subscribes to all modes while buses are shown', () => {
+    expect(topicModes(new Set(['bus', 'tram']))).toBeNull()
+  })
+  it('lists topic modes when buses are hidden', () => {
+    expect(topicModes(new Set(['tram', 'metro']))).toEqual(['tram', 'metro'])
+    expect(topicModes(new Set())).toEqual([])
+  })
+  it('filters area topics by mode and keeps under the cap', () => {
+    const box = { south: 60.181, north: 60.182, west: 24.951, east: 24.952 }
+    expect(areaFilters(box, 100, null, ['tram', 'metro'])).toEqual([
+      '/hfp/v2/journey/ongoing/vp/tram/+/+/+/+/+/+/+/+/60;24/19/85/#',
+      '/hfp/v2/journey/ongoing/vp/metro/+/+/+/+/+/+/+/+/60;24/19/85/#',
+    ])
+    expect(areaFilters(box, 100, null, [])).toEqual([])
+    const wide = { south: 60.1, north: 60.3, west: 24.8, east: 25.1 }
+    expect(areaFilters(wide, 160, [0, 1, 2, 3], ['tram', 'metro', 'train', 'ferry']).length).toBeLessThanOrEqual(160)
   })
 })

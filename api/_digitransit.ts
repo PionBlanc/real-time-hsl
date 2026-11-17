@@ -2,6 +2,9 @@
 
 const GRAPHQL = 'https://api.digitransit.fi/routing/v2/hsl/gtfs/v1'
 
+/** Give up on Digitransit after this long instead of hanging until the platform kills us. */
+export const UPSTREAM_TIMEOUT_MS = 8000
+
 export function apiKey(): string | undefined {
   return process.env.DIGITRANSIT_API_KEY || undefined
 }
@@ -46,6 +49,16 @@ export function canonicalInt(s: string | null): number | null {
   return s != null && /^(0|[1-9]\d{0,9})$/.test(s) ? Number(s) : null
 }
 
+/**
+ * Response for a failed upstream call. The error is logged server-side only (upstream
+ * messages can reveal internals), and the failure is cached at the edge for a few seconds,
+ * so when Digitransit struggles or rate-limits us every client retry doesn't hit it again.
+ */
+export function upstreamError(where: string, e: unknown): Response {
+  console.error(`${where}: upstream error:`, e)
+  return json({ error: 'upstream' }, 502, 'public, max-age=0, s-maxage=10')
+}
+
 export async function graphql<T>(
   key: string,
   query: string,
@@ -58,6 +71,7 @@ export async function graphql<T>(
       'digitransit-subscription-key': key,
     },
     body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
   })
   if (!r.ok) throw new Error(`digitransit ${r.status}`)
   const data = (await r.json()) as { data?: T; errors?: Array<{ message: string }> }

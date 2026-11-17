@@ -1,7 +1,7 @@
 // GET /api/stop?id=1130446[&start=<unix s, whole minute>]
 // Next departures from one stop, with realtime estimates where available ("bus-stop screen").
 // `start` pages further into the future (departures at or after that time).
-import { apiKey, badRequest, canonicalInt, graphql, guard, json, noKey } from './_digitransit'
+import { apiKey, badRequest, canonicalInt, graphql, guard, json, noKey, upstreamError } from './_digitransit'
 
 export const config = { runtime: 'edge' }
 
@@ -93,6 +93,6 @@ export default async function handler(req: Request): Promise<Response> {
       'public, max-age=10, s-maxage=15, stale-while-revalidate=15',
     )
   } catch (e) {
-    return json({ error: 'upstream', detail: String(e) }, 502, 'no-store')
+    return upstreamError('stop', e)
   }
 }

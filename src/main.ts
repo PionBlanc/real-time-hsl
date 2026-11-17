@@ -14,6 +14,7 @@ import {
   nowServiceSeconds,
   parseMessage,
   routeFilter,
+  topicModes,
   tripStartSeconds,
   vehicleFilter,
   vehicleNumberFilter,
@@ -28,6 +29,9 @@ import { StopsLayer } from './stops'
 declare const __HAS_KEY__: boolean
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
+
+/** Background colour class for a mode (see .m-* in styles.css). Classes, not style="", for the CSP. */
+const modeClass = (m: Mode | null): string => `m-${m ?? 'none'}`
 
 const store = {
   get<T>(k: string): T | null {
@@ -49,8 +53,17 @@ const store = {
 // ---------------------------------------------------------------- map
 
 const mapEl = $('map')
+/**
+ * Locations are only stored to 3 decimals (~100 m): plenty to open the map in the right
+ * place, without keeping someone's exact home position on the device. (The saved view
+ * counts too: while following you, the map centre is your GPS position.)
+ */
+const coarse = (n: number): number => Math.round(n * 1000) / 1000
 const lastGps = store.get<{ lat: number; lng: number }>('gps')
 const lastView = store.get<{ lat: number; lng: number; z: number }>('view')
+// Re-save values stored precisely by older versions.
+if (lastGps) store.set('gps', { lat: coarse(lastGps.lat), lng: coarse(lastGps.lng) })
+if (lastView) store.set('view', { lat: coarse(lastView.lat), lng: coarse(lastView.lng), z: lastView.z })
 const start: [number, number, number] = lastGps
   ? [lastGps.lat, lastGps.lng, 15]
   : lastView
@@ -164,8 +177,9 @@ function updateTopics(): void {
     const box = { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() }
     // Close up: every update (~1/s per vehicle). Further out: only when a vehicle
     // moved ~100 m (geohash levels 0–3, ~12 % of the traffic).
-    if (z >= COMPACT_BELOW_ZOOM) topics.push(...areaFilters(box, 160))
-    else if (z >= AREA_MIN_ZOOM) topics.push(...areaFilters(box, 160, [0, 1, 2, 3]))
+    const tm = topicModes(modes)
+    if (z >= COMPACT_BELOW_ZOOM) topics.push(...areaFilters(box, 160, null, tm))
+    else if (z >= AREA_MIN_ZOOM) topics.push(...areaFilters(box, 160, [0, 1, 2, 3], tm))
     else hint = 'Zoom in to see vehicles'
   }
   const sel = selected ? vehicles.get(selected) : undefined
@@ -195,7 +209,7 @@ map.on('moveend', () => {
     if (__HAS_KEY__) stopsLayer.update()
   }, 250)
   const c = map.getCenter()
-  store.set('view', { lat: +c.lat.toFixed(5), lng: +c.lng.toFixed(5), z: map.getZoom() })
+  store.set('view', { lat: coarse(c.lat), lng: coarse(c.lng), z: map.getZoom() })
 })
 
 map.on('dragstart', () => {
@@ -347,7 +361,7 @@ function renderCard(m: Msg): void {
 
   setCard(`
     <div class="ch">
-      <span class="badge" style="background:${COLORS[m.mode]}">${escapeHtml(m.desi || '?')}</span>
+      <span class="badge ${modeClass(m.mode)}">${escapeHtml(m.desi || '?')}</span>
       <div class="dest"><b>${escapeHtml(dest ? `→ ${dest}` : m.desi)}</b><small>${meta}</small></div>
       <button type="button" class="fol${followVehicle ? ' on' : ''}" data-act="follow" aria-pressed="${followVehicle}">Follow</button>
       <button type="button" class="ib" data-act="close" aria-label="Close">
@@ -508,23 +522,33 @@ const dayFmt = new Intl.DateTimeFormat('en-GB', {
   month: 'numeric',
 })
 
+const tripMatchKey = (route: string, dir: string, date: string, start: number) =>
+  `${route}|${dir}|${date}|${start}`
+
+/**
+ * Live vehicles by the trip they're running, to find the vehicle for a departure.
+ * Built once per render: one pass over the vehicles instead of one per departure
+ * (tripStartSeconds formats a date, which adds up with 200 departures × 1000 vehicles).
+ */
+function liveByTrip(): Map<string, Msg> {
+  const out = new Map<string, Msg>()
+  for (const m of vehicles.visible()) {
+    if (!m.start || !m.oday) continue
+    out.set(tripMatchKey(m.route, m.dir, m.oday, tripStartSeconds(m.start, m.oday, m.tst)), m)
+  }
+  return out
+}
+
 /** The live vehicle running this departure, if it's on the map. */
-function vehicleFor(d: Departure, live: Array<Msg>): Msg | undefined {
+function vehicleFor(d: Departure, live: Map<string, Msg>): Msg | undefined {
   if (d.canceled || d.start < 0) return undefined
-  return live.find(
-    (m) =>
-      m.route === d.route &&
-      m.dir === d.dir &&
-      m.oday === d.date &&
-      !!m.start &&
-      tripStartSeconds(m.start, m.oday, m.tst) === d.start,
-  )
+  return live.get(tripMatchKey(d.route, d.dir, d.date, d.start))
 }
 
 const PIN =
   '<svg class="pin" viewBox="0 0 24 24" width="14" height="14"><path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2"/></svg>'
 
-function departureRow(d: Departure, nowS: number, live: Array<Msg>): string {
+function departureRow(d: Departure, nowS: number, live: Map<string, Msg>): string {
   const mins = Math.floor((d.at - nowS) / 60)
   const when = d.canceled ? 'Cancelled' : mins <= 0 ? 'Now' : mins < 20 ? `${mins} min` : clock(d.clockSec)
   const late = Math.round((d.at - d.sched) / 60)
@@ -539,7 +563,7 @@ function departureRow(d: Departure, nowS: number, live: Array<Msg>): string {
     ? ` data-act="veh" data-id="${escapeHtml(veh.id)}" role="button" tabindex="0" aria-label="Show ${escapeHtml(d.line)} to ${escapeHtml(d.headsign)} on the map"`
     : ''
   return `<li class="${cls}"${attrs}>
-      <span class="ln" style="background:${d.mode ? COLORS[d.mode] : '#5d6874'}">${escapeHtml(d.line || '?')}</span>
+      <span class="ln ${modeClass(d.mode)}">${escapeHtml(d.line || '?')}</span>
       <span class="hs"><span>${escapeHtml(d.headsign)}</span>${veh ? PIN : ''}</span>
       <time class="${d.realtime && !d.canceled ? 'rt' : ''}" title="${escapeHtml(title)}">${when}</time>
     </li>`
@@ -549,7 +573,7 @@ function renderBoard(): void {
   if (!stopSel || selected) return
   const s = board?.stop ?? stopSel
   const nowS = Date.now() / 1000
-  const live = vehicles.visible()
+  const live = liveByTrip()
   // Separate rows by calendar day, so 00:20 after a 23:50 isn't ambiguous.
   const today = helsinkiDate(new Date())
   const tomorrow = helsinkiDate(new Date(Date.now() + 86_400_000))
@@ -586,7 +610,7 @@ function renderBoard(): void {
   const scroll = cardEl.querySelector('.board')?.scrollTop ?? 0
   setCard(`
     <div class="ch">
-      <span class="badge" style="background:${s.mode ? COLORS[s.mode] : '#5d6874'}" aria-hidden="true">
+      <span class="badge ${modeClass(s.mode)}" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="20" height="20"><rect x="6" y="3" width="12" height="10" rx="2"/><path d="M12 13v8M9 21h6"/></svg>
       </span>
       <div class="dest"><b>${escapeHtml(s.name || 'Stop')}</b><small>${meta}</small></div>
@@ -635,7 +659,7 @@ function onPos(p: GeolocationPosition): void {
   const first = !gps
   gps = ll
   locateBtn.classList.remove('denied')
-  store.set('gps', { lat: +ll.lat.toFixed(5), lng: +ll.lng.toFixed(5) })
+  store.set('gps', { lat: coarse(ll.lat), lng: coarse(ll.lng) })
   if (!meDot) {
     meAcc = L.circle(ll, { radius: p.coords.accuracy, stroke: false, fillColor: '#007AC9', fillOpacity: 0.1, interactive: false }).addTo(map)
     meDot = L.circleMarker(ll, { radius: 7, weight: 3, color: '#fff', fillColor: '#007AC9', fillOpacity: 1, interactive: false, className: 'me' }).addTo(map)
@@ -781,6 +805,7 @@ modesEl.addEventListener('click', (e) => {
   store.set('modes', [...modes])
   renderModes()
   vehicles.refilter()
+  updateTopics() // hiding buses also stops downloading them
   stopsLayer.modes = modes
   stopsLayer.refilter()
 })

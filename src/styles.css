@@ -517,3 +517,12 @@ svg {
   white-space: nowrap;
   border: 0;
 }
+
+/* Mode colours for card badges, as classes rather than style="" so the CSP can
+   forbid inline styles. Keep in sync with COLORS in src/hfp.ts. */
+.m-bus { background: #007ac9; }
+.m-tram { background: #00985f; }
+.m-metro { background: #ff6319; }
+.m-train { background: #8c4799; }
+.m-ferry { background: #00b9e4; }
+.m-none { background: #5d6874; }

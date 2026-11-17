@@ -60,6 +60,25 @@ export interface Msg {
 
 const dec = new TextDecoder()
 
+/** HFP topic transport modes that make up each app mode (U-line and robot buses are buses). */
+const TOPIC_MODES: Record<Mode, Array<string>> = {
+  bus: ['bus', 'ubus', 'robot'],
+  tram: ['tram'],
+  metro: ['metro'],
+  train: ['train'],
+  ferry: ['ferry'],
+}
+
+/**
+ * Topic-level transport modes to subscribe to for the shown app modes, or null for all (`+`).
+ * Per-mode filters multiply the filter count (which forces coarser geohash cells), so they
+ * only pay off when buses, the bulk of the traffic, are hidden.
+ */
+export function topicModes(shown: ReadonlySet<Mode>): Array<string> | null {
+  if (shown.has('bus')) return null
+  return MODES.filter((m) => shown.has(m)).flatMap((m) => TOPIC_MODES[m])
+}
+
 function normMode(m: string): Mode | null {
   if (m === 'bus' || m === 'ubus' || m === 'robot') return 'bus'
   if (m === 'tram' || m === 'metro' || m === 'train' || m === 'ferry') return m
@@ -126,13 +145,17 @@ export interface Box {
  * Picks the finest cell size (0.01°, 0.1° or 1°) that stays under maxFilters.
  * `levels` optionally restricts geohash_level (0–5); e.g. [0,1,2,3] only
  * delivers updates when a vehicle moved ≥ ~100 m, cutting traffic ~90 %.
+ * `modes` optionally restricts the topic transport mode (see topicModes); [] = nothing.
  */
 export function areaFilters(
   box: Box,
   maxFilters: number,
   levels: Array<number> | null = null,
+  modes: Array<string> | null = null,
 ): Array<string> {
   const lv = levels ? levels.map(String) : ['+']
+  const md = modes ?? ['+']
+  if (!md.length) return []
   for (const p of [2, 1, 0]) {
     const f = 10 ** p
     const la0 = Math.floor(box.south * f)
@@ -140,12 +163,12 @@ export function areaFilters(
     const lo0 = Math.floor(box.west * f)
     const lo1 = Math.floor(box.east * f)
     const cells = (la1 - la0 + 1) * (lo1 - lo0 + 1)
-    if (cells * lv.length > maxFilters && p > 0) continue
+    if (cells * lv.length * md.length > maxFilters && p > 0) continue
     const out: Array<string> = []
     for (let la = la0; la <= la1; la++)
       for (let lo = lo0; lo <= lo1; lo++)
         for (const l of lv)
-          out.push(`${BASE}/+/+/+/+/+/+/+/+/${l}/${geohash(la, lo, p)}/#`)
+          for (const m of md) out.push(`${BASE}/${m}/+/+/+/+/+/+/+/${l}/${geohash(la, lo, p)}/#`)
     return out
   }
   return []

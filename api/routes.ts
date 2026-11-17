@@ -1,6 +1,6 @@
 // GET /api/routes?q=551  ->  [{ id: "2551", n: "551", m: "BUS" }]
 // Maps a line number as shown to passengers to HFP/GTFS route ids.
-import { apiKey, badRequest, graphql, guard, json, noKey } from './_digitransit'
+import { apiKey, badRequest, graphql, guard, json, noKey, upstreamError } from './_digitransit'
 
 export const config = { runtime: 'edge' }
 
@@ -25,6 +25,6 @@ export default async function handler(req: Request): Promise<Response> {
       .map((r) => ({ id: r.gtfsId.slice(4), n: r.shortName, m: r.mode }))
     return json(out, 200, 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800')
   } catch (e) {
-    return json({ error: 'upstream', detail: String(e) }, 502, 'no-store')
+    return upstreamError('routes', e)
   }
 }

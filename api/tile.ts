@@ -1,7 +1,7 @@
 // GET /api/tile?z=13&x=4663&y=2371&r=@2x
 // Proxies HSL's background map tiles so the Digitransit key stays server-side.
 // Responses are cached hard by Vercel's CDN and the browser.
-import { apiKey, canonicalInt, guard } from './_digitransit'
+import { UPSTREAM_TIMEOUT_MS, apiKey, canonicalInt, guard } from './_digitransit'
 
 export const config = { runtime: 'edge' }
 
@@ -47,9 +47,16 @@ export default async function handler(req: Request): Promise<Response> {
   if (z == null || x == null || y == null || (r !== '' && r !== '@2x') || !tileInArea(z, x, y)) {
     return bad()
   }
-  const up = await fetch(`https://cdn.digitransit.fi/map/v3/${SOURCE}/${z}/${x}/${y}${r}.png`, {
-    headers: { 'digitransit-subscription-key': key },
-  })
+  let up: Response
+  try {
+    up = await fetch(`https://cdn.digitransit.fi/map/v3/${SOURCE}/${z}/${x}/${y}${r}.png`, {
+      headers: { 'digitransit-subscription-key': key },
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    })
+  } catch (e) {
+    console.error('tile: upstream error:', e)
+    return new Response(null, { status: 502, headers: { 'cache-control': 'public, max-age=0, s-maxage=10' } })
+  }
   if (!up.ok) {
     return new Response(null, { status: up.status, headers: { 'cache-control': 'public, s-maxage=60' } })
   }

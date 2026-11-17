@@ -58,9 +58,13 @@ vehicle shows its info but no route.
 bun install
 echo "DIGITRANSIT_API_KEY=..." > .env   # optional
 bun run dev       # http://localhost:3000, /api functions run locally too
+bun run dev:lan   # same, but reachable from your phone on the same network
 bun run test
 bun run build
 ```
 
 `VITE_BROKER=ws://localhost:18884 bun run dev` points the app at a local MQTT
 broker for testing with simulated vehicles.
+
+`dev:lan` exposes the dev server, including the `/api` proxy that uses your key, to
+everyone on the network. Only use it on networks you trust, and stop it when you're done.
