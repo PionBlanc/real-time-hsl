@@ -11,6 +11,7 @@ interface V {
   last: number
   stale: boolean
   rot: number | null // unwrapped heading, so 350°→10° turns 20°, not 340°
+  sameLine: boolean
 }
 
 const STALE_MS = 30_000
@@ -106,11 +107,17 @@ export class Vehicles {
     marker.on('click', () => this.onClick(m.id))
     marker.addTo(this.map)
     const el = marker.getElement()!
-    const v: V = { msg: m, marker, el, label, arrow, last: Date.now(), stale: false, rot: null }
+    const v: V = { msg: m, marker, el, label, arrow, last: Date.now(), stale: false, rot: null, sameLine: false }
     this.all.set(m.id, v)
     if (m.id === this.selected) {
       el.classList.add('sel')
       marker.setZIndexOffset(10000)
+    } else if (this.selected) {
+      const sel = this.all.get(this.selected)
+      if (sel && m.desi.toUpperCase() === sel.msg.desi.toUpperCase()) {
+        v.sameLine = true
+        el.classList.add('same-line')
+      }
     }
     return v
   }
@@ -129,7 +136,17 @@ export class Vehicles {
       prev.marker.setZIndexOffset(0)
     }
     this.selected = id
-    const cur = id && this.all.get(id)
+    const cur = id ? this.all.get(id) : undefined
+    const selectedLine = cur?.msg.desi.toUpperCase()
+
+    for (const [vid, v] of this.all) {
+      const isSameLine = !!(selectedLine && v.msg.desi.toUpperCase() === selectedLine && vid !== id)
+      if (isSameLine !== v.sameLine) {
+        v.sameLine = isSameLine
+        v.el.classList.toggle('same-line', isSameLine)
+      }
+    }
+
     if (cur) {
       cur.el.classList.add('sel')
       cur.marker.setZIndexOffset(10000)
