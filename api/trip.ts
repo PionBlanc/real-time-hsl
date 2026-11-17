@@ -46,7 +46,8 @@ export default async function handler(req: Request): Promise<Response> {
   const date = q.get('date') ?? ''
   const time = canonicalInt(q.get('time'))
   if (
-    !/^[0-9A-Za-z]{1,12}$/.test(route) ||
+    // HSL route ids: 2–4 digits plus up to 3 more (2551, 1001H, 31M1, 3002U, 4611BK…; checked 2026-11).
+    !/^\d{2,4}[0-9A-Z]{0,3}$/.test(route) ||
     !/^[12]$/.test(dir) ||
     !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
     // Live vehicles only run on yesterday's, today's or tomorrow's service day.

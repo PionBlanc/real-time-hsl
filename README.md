@@ -1,7 +1,7 @@
 # HSL Live
 
-A tiny, mobile-first live map of HSL vehicles. It opens straight on your GPS
-position and shows the buses, trams, metros, trains and ferries around you,
+A tiny, mobile-first live map of HSL vehicles. It opens on your GPS position
+(once you've shared it) and shows the buses, trams, metros, trains and ferries around you,
 moving in real time.
 
 - **Tap a vehicle**: its route is drawn (driven part greyed, remaining part in
@@ -18,7 +18,8 @@ moving in real time.
   find that vehicle anywhere. Operators can share numbers, so there may be more than one.
   Combine with lines: `551 #1234`.
 - **Type chips** under the search bar: tap Bus / Tram / … to hide or show that type.
-- **Crosshair**: back to your location.
+- **Crosshair**: show your location. The location permission is only requested when you tap
+  it; after that, the app opens on your position automatically.
 
 ## How it works
 
@@ -49,7 +50,9 @@ Route paths, the line filter and the HSL map tiles need a free key from
 Vercel (Project → Settings → Environment Variables, for Production *and* Preview)
 and redeploy. The key is only used server-side in `/api`.
 
-Without a key the app still shows live vehicles on a CARTO base map; tapping a
+Without a key the app still shows live vehicles on OpenStreetMap's tiles (for
+development only: their usage policy forbids production traffic, so a Vercel production
+build fails without the key); tapping a
 vehicle shows its info but no route.
 
 ## Development

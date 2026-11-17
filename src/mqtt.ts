@@ -62,6 +62,8 @@ const PING_MS = 15_000
  * network changes often leave a WebSocket half-open: no close event for minutes.
  */
 const DEAD_MS = 40_000
+/** Largest packet accepted from the broker. */
+const MAX_PACKET = 1 << 20
 
 export class MqttClient {
   status: MqttStatus = 'offline'
@@ -186,13 +188,16 @@ export class MqttClient {
 
   /** Ping the broker, or drop and reconnect if it has gone silent. */
   private keepalive(): void {
-    if (Date.now() - this.lastRx > DEAD_MS) {
-      // Don't wait for the dead socket's close event: tear down and reconnect now.
-      this.teardown()
-      if (this.running) this.scheduleRetry()
-      return
-    }
-    this.send(PINGREQ)
+    // Don't wait for the dead socket's close event: tear down and reconnect now.
+    if (Date.now() - this.lastRx > DEAD_MS) this.drop()
+    else this.send(PINGREQ)
+  }
+
+  /** Abandon this connection and reconnect (after the usual backoff). */
+  private drop(): void {
+    this.buf = new Uint8Array(0)
+    this.teardown()
+    if (this.running) this.scheduleRetry()
   }
 
   private feed(chunk: Uint8Array): void {
@@ -212,11 +217,15 @@ export class MqttClient {
       let i = 1
       let b: number
       do {
+        // The remaining-length field is at most 4 bytes; more means a corrupt stream.
+        if (i > 4) return this.drop()
         if (i >= buf.length) return
         b = buf[i++]
         len += (b & 127) * mul
         mul *= 128
       } while (b & 128)
+      // HFP messages are ~1 KB; don't buffer up to MQTT's 256 MB limit for a bogus length.
+      if (len > MAX_PACKET) return this.drop()
       if (buf.length < i + len) return
       this.handle(buf[0], buf.subarray(i, i + len))
       this.buf = buf.subarray(i + len)

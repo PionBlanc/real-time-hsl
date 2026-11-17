@@ -5,6 +5,8 @@ import type { Mode, Msg } from './hfp'
  * Client-side types for our own /api/* endpoints (see api/*.ts), which wrap the
  * Digitransit GraphQL API. The endpoints send compact JSON (short keys, positional
  * arrays) to save bandwidth; the fetch* functions below expand it into these types.
+ * Query params must be in the order api/*.ts lists them in guard() (else 400).
+ * Positional arrays are append-only (see api/_digitransit.ts).
  *
  * Time conventions:
  * - "service day": the operating day a trip belongs to. Trips after midnight still
@@ -34,12 +36,17 @@ export class MissingKeyError extends Error {}
 
 export const tripKey = (m: Msg): string => `${m.route}|${m.dir}|${m.oday}|${m.start}`
 
+/** Trips hold whole route shapes: keep only the most recently used ones (Map order = LRU). */
+const TRIP_CACHE_MAX = 50
 const tripCache = new Map<string, Promise<Trip | null>>()
 
 export function fetchTrip(m: Msg): Promise<Trip | null> {
   const key = tripKey(m)
   let p = tripCache.get(key)
-  if (!p) {
+  if (p) {
+    tripCache.delete(key)
+    tripCache.set(key, p)
+  } else {
     const time = tripStartSeconds(m.start, m.oday, m.tst)
     const qs = new URLSearchParams({ route: m.route, dir: m.dir, date: m.oday, time: String(time) })
     p = fetch(`/api/trip?${qs}`).then(async (r) => {
@@ -63,6 +70,7 @@ export function fetchTrip(m: Msg): Promise<Trip | null> {
     })
     p.catch(() => tripCache.delete(key)) // allow retry after failures
     tripCache.set(key, p)
+    if (tripCache.size > TRIP_CACHE_MAX) tripCache.delete(tripCache.keys().next().value!)
   }
   return p
 }
@@ -82,6 +90,7 @@ export function fetchRoutes(line: string): Promise<Array<RouteRef>> {
   if (!p) {
     p = fetch(`/api/routes?q=${encodeURIComponent(key)}`).then((r) => {
       if (r.status === 503) throw new MissingKeyError()
+      if (r.status === 400) return [] // not shaped like any HSL line name
       if (!r.ok) throw new Error(`routes ${r.status}`)
       return r.json()
     })

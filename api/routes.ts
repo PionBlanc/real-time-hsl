@@ -12,8 +12,10 @@ export default async function handler(req: Request): Promise<Response> {
   const key = apiKey()
   if (!key) return noKey()
   const q = new URL(req.url).searchParams.get('q') ?? ''
-  // Upper case only (the client upper-cases), so "m1" and "M1" don't cache separately.
-  if (!/^[0-9A-Z]{1,8}$/.test(q)) return badRequest()
+  // Shapes of real HSL line names (checked 2026-11: 551, 550B, 15, 9N, M1, I, U1A, 200AB…),
+  // with a little slack. Keeps the uncacheable keyspace small. Upper case only (the client
+  // upper-cases), so "m1" and "M1" don't cache separately.
+  if (!/^(?:[A-Z]\d{0,2}[A-Z]?|\d{1,4}[A-Z]{0,2})$/.test(q)) return badRequest()
   try {
     const d = await graphql<{ routes: Array<{ gtfsId: string; shortName: string | null; mode: string }> }>(
       key,

@@ -103,7 +103,14 @@ export function parseMessage(topic: string, payload: Uint8Array): Msg | null {
   } catch {
     return null
   }
-  if (!vp || vp.lat == null || vp.long == null) return null
+  if (!vp) return null
+  // Validate what the rest of the app relies on: one malformed message must not put NaN
+  // into Leaflet or make Intl date formatting throw (an invalid Date throws RangeError).
+  const lat = num(vp.lat)
+  const lng = num(vp.long)
+  if (lat == null || lng == null || typeof vp.tst !== 'string' || Number.isNaN(Date.parse(vp.tst))) return null
+  const start = p[12] || vp.start || ''
+  const oday = vp.oday || ''
   return {
     id: `${p[7]}/${p[8]}`,
     mode,
@@ -112,19 +119,23 @@ export function parseMessage(topic: string, payload: Uint8Array): Msg | null {
     route: p[9] || vp.route || '',
     dir: p[10] || vp.dir || '1',
     headsign: p[11] || '',
-    start: p[12] || vp.start || '',
+    // '' (= unknown, no route lookup) unless well-formed.
+    start: /^\d{2}:\d{2}$/.test(start) ? start : '',
     nextStop: p[13] || '',
-    desi: vp.desi || '',
-    lat: vp.lat,
-    lng: vp.long,
-    hdg: vp.hdg,
-    spd: vp.spd,
-    dl: vp.dl,
+    desi: typeof vp.desi === 'string' ? vp.desi : '',
+    lat,
+    lng,
+    hdg: num(vp.hdg),
+    spd: num(vp.spd),
+    dl: num(vp.dl),
     doorsOpen: vp.drst === 1,
-    oday: vp.oday || '',
+    oday: /^\d{4}-\d{2}-\d{2}$/.test(oday) ? oday : '',
     tst: vp.tst,
   }
 }
+
+/** A finite number, or null for anything else (missing, null, a string…). */
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
 /** Geohash topic levels for the cell containing (la, lo), both already scaled by 10^p and floored. */
 function geohash(la: number, lo: number, p: number): string {

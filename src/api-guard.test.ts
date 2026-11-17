@@ -15,6 +15,14 @@ describe('guard', () => {
     expect(guard(req('id=1&cb=123'), ['id'])?.status).toBe(400)
     expect(guard(req('id=1&id=2'), ['id'])?.status).toBe(400)
   })
+  it('only accepts the canonical spelling (one cache key per value)', () => {
+    expect(guard(req('z=1&x=2&y=3&r=@2x'), ['z', 'x', 'y', 'r'])).toBeNull()
+    expect(guard(req('z=1&x=2&y=3&r='), ['z', 'x', 'y', 'r'])).toBeNull()
+    expect(guard(req('id=1'), ['id', 'start'])).toBeNull() // optional params may be left out
+    expect(guard(req(''), ['id'])).toBeNull()
+    for (const qs of ['x=2&z=1&y=3&r=', 'z=%31&x=2&y=3&r=', 'z=1&x=2&y=3&r=%402x', 'z=1&&x=2', 'z&x=2', 'q=a+b'])
+      expect(guard(req(qs), ['z', 'x', 'y', 'r', 'q'])?.status, qs).toBe(400)
+  })
   it('rejects requests from other websites', () => {
     expect(guard(req('id=1', { 'sec-fetch-site': 'cross-site' }), ['id'])?.status).toBe(403)
   })

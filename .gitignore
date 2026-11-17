@@ -4,10 +4,8 @@ dist
 dist-ssr
 *.local
 count.txt
-.env
+.env*
 .nitro
 .tanstack
 .wrangler
-node_modules
 .vite
-.env*

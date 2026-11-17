@@ -61,7 +61,8 @@ export default async function handler(req: Request): Promise<Response> {
   const start = startS == null ? 0 : canonicalInt(startS) // 0 = now
   const nowS = Date.now() / 1000
   if (
-    !/^[0-9A-Za-z_]{1,20}$/.test(id) ||
+    // All HSL stop ids are 7 digits (checked 2026-11, 8339 stops). Keep in sync with src/main.ts.
+    !/^\d{7}$/.test(id) ||
     start == null ||
     // Paging is by whole minutes, so at most one cache entry per stop per minute.
     (start !== 0 && (start % 60 !== 0 || start < nowS - 3600 || start > nowS + 7 * 86400))

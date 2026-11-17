@@ -202,14 +202,22 @@ function updateTopics(): void {
 }
 
 let moveTimer: ReturnType<typeof setTimeout> | undefined
+let savedView = ''
 map.on('moveend', () => {
   clearTimeout(moveTimer)
   moveTimer = setTimeout(() => {
     updateTopics()
     if (__HAS_KEY__) stopsLayer.update()
   }, 250)
+  // While following a vehicle this fires every second; localStorage writes are synchronous,
+  // so only write when the stored (coarse) value actually changes.
   const c = map.getCenter()
-  store.set('view', { lat: coarse(c.lat), lng: coarse(c.lng), z: map.getZoom() })
+  const v = { lat: coarse(c.lat), lng: coarse(c.lng), z: map.getZoom() }
+  const s = JSON.stringify(v)
+  if (s !== savedView) {
+    savedView = s
+    store.set('view', v)
+  }
 })
 
 map.on('dragstart', () => {
@@ -641,20 +649,39 @@ $('card').addEventListener(
 
 const locateBtn = $('locate')
 let watchId: number | null = null
+/** GPS was turned on (auto or by the user); it pauses while the tab is hidden. */
+let gpsOn = false
 let meDot: L.CircleMarker | null = null
 let meAcc: L.Circle | null = null
 
 function startGps(): void {
   if (!('geolocation' in navigator) || watchId !== null) return
+  gpsOn = true
   watchId = navigator.geolocation.watchPosition(onPos, onPosError, {
     enableHighAccuracy: true,
     maximumAge: 5000,
     timeout: 30000,
   })
 }
-function stopGps(): void {
+function pauseGps(): void {
   if (watchId !== null) navigator.geolocation.clearWatch(watchId)
   watchId = null
+}
+
+/**
+ * Turn GPS on at startup only when that won't pop up a permission prompt out of nowhere:
+ * permission already granted, or the user shared their location on an earlier visit (some
+ * browsers, e.g. Safari, ask again each session). Otherwise wait for a tap on the locate button.
+ */
+async function autoStartGps(): Promise<void> {
+  let state: PermissionState | undefined
+  try {
+    state = (await navigator.permissions?.query({ name: 'geolocation' }))?.state
+  } catch {
+    /* unsupported: decide on lastGps alone */
+  }
+  if (state === 'denied') locateBtn.classList.add('denied')
+  else if (state === 'granted' || lastGps) startGps()
 }
 
 function onPos(p: GeolocationPosition): void {
@@ -682,7 +709,8 @@ function onPos(p: GeolocationPosition): void {
 function onPosError(e: GeolocationPositionError): void {
   if (e.code === e.PERMISSION_DENIED) {
     locateBtn.classList.add('denied')
-    stopGps()
+    pauseGps()
+    gpsOn = false
   }
 }
 
@@ -841,11 +869,11 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     hiddenAt = Date.now()
     mqtt.stop() // no data or battery use in the background
-    stopGps()
+    pauseGps()
   } else {
     if (Date.now() - hiddenAt > 20000) vehicles.markAllStale()
     mqtt.start()
-    if (!locateBtn.classList.contains('denied')) startGps()
+    if (gpsOn) startGps()
     loadBoard() // no-op unless a stop board is open
   }
 })
@@ -856,12 +884,12 @@ renderModes()
 updateTopics()
 if (__HAS_KEY__) stopsLayer.update()
 mqtt.start()
-startGps()
+void autoStartGps()
 startSearch()
 
-// ?stop=1130446 opens that stop's board (a shareable "my stop" link).
+// ?stop=1130446 opens that stop's board (a shareable "my stop" link). Same check as api/stop.ts.
 const stopParam = new URL(location.href).searchParams.get('stop') ?? ''
-if (__HAS_KEY__ && /^[0-9A-Za-z_]{1,20}$/.test(stopParam)) {
+if (__HAS_KEY__ && /^\d{7}$/.test(stopParam)) {
   userMoved = true // don't jump to GPS
   selectStop({ id: stopParam, name: '', code: '', lat: NaN, lng: NaN, mode: null })
 }

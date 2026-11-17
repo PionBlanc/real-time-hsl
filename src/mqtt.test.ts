@@ -63,6 +63,20 @@ describe('MqttClient keepalive', () => {
     expect(FakeWS.all.length).toBe(1)
   })
 
+  it('drops the connection on a corrupt or oversized packet length', () => {
+    for (const bad of [
+      [0x30, 0xff, 0xff, 0xff, 0xff, 0x01], // remaining length longer than 4 bytes
+      [0x30, 0xff, 0xff, 0xff, 0x7f], // 256 MB packet
+    ]) {
+      FakeWS.all = []
+      const { c, ws } = connect()
+      ws.receive(bad)
+      expect(ws.closed).toBe(true)
+      expect(c.status).toBe('connecting')
+      c.stop()
+    }
+  })
+
   it('reconnects when the broker goes silent (half-open socket)', () => {
     const { c, ws, statuses } = connect()
     vi.advanceTimersByTime(45_000) // pings go unanswered

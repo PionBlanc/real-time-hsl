@@ -14,9 +14,13 @@ function vercelApiDev(): Plugin {
         if (!m) return next()
         try {
           const mod = await server.ssrLoadModule(`/api/${m[1]}.ts`)
-          const resp: Response = await mod.default(
-            new Request(`http://localhost${req.url}`),
-          )
+          // Pass the browser's headers through, so guard() (Sec-Fetch-Site) runs as in production.
+          const headers = new Headers()
+          for (const [k, v] of Object.entries(req.headers)) {
+            if (typeof v === 'string') headers.set(k, v)
+            else if (Array.isArray(v)) headers.set(k, v.join(', '))
+          }
+          const resp: Response = await mod.default(new Request(`http://localhost${req.url}`, { headers }))
           res.statusCode = resp.status
           resp.headers.forEach((v, k) => res.setHeader(k, v))
           res.end(Buffer.from(await resp.arrayBuffer()))
@@ -35,6 +39,11 @@ export default defineConfig(({ mode }) => {
     process.env.DIGITRANSIT_API_KEY = env.DIGITRANSIT_API_KEY
   }
   const hasKey = Boolean(process.env.DIGITRANSIT_API_KEY)
+  // Without a key the app falls back to tile.openstreetmap.org, whose usage policy forbids
+  // production traffic. Fail the production deploy instead of shipping that.
+  if (process.env.VERCEL_ENV === 'production' && !hasKey) {
+    throw new Error('DIGITRANSIT_API_KEY is not set for the Vercel production build')
+  }
 
   return {
     plugins: [vercelApiDev()],

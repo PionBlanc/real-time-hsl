@@ -9,6 +9,11 @@ export function apiKey(): string | undefined {
   return process.env.DIGITRANSIT_API_KEY || undefined
 }
 
+/*
+ * Positional arrays in responses (e.g. stop departures) are APPEND-ONLY: never reorder or
+ * remove a field. The service worker serves the previous app version for one visit after
+ * each deploy, and that old code reads fields by index.
+ */
 export function json(body: unknown, status: number, cache: string): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -25,18 +30,26 @@ export const badRequest = (): Response => json({ error: 'bad_request' }, 400, 'n
  * Abuse guard, run before anything touches the API key. The edge cache keys on the full
  * URL, so every distinct URL that reaches a handler costs an upstream call on our key.
  * - Other websites' pages may not use these endpoints (browsers send Sec-Fetch-Site).
- * - Only the listed params, each at most once: junk params (`&x=<random>`) would
- *   otherwise bypass the cache on every request.
+ * - Only the canonical spelling of a query: the listed params, each at most once, in the
+ *   listed order, with no percent-encoding or "+". Junk params (`&x=<random>`), reordered
+ *   params or `%31` for `1` would otherwise each be a new cache key and a new upstream call.
+ *   Clients must build their URLs in this order.
+ * This does not stop scripts (they can omit Sec-Fetch-Site); per-IP rate limiting for
+ * /api/* is set up in the Vercel Firewall.
  * Returns an error response, or null when the request may proceed.
  */
 export function guard(req: Request, allowed: ReadonlyArray<string>): Response | null {
   if (req.headers.get('sec-fetch-site') === 'cross-site') {
     return json({ error: 'forbidden' }, 403, 'no-store')
   }
-  const seen = new Set<string>()
-  for (const k of new URL(req.url).searchParams.keys()) {
-    if (!allowed.includes(k) || seen.has(k)) return badRequest()
-    seen.add(k)
+  const raw = new URL(req.url).search.slice(1)
+  if (raw === '') return null
+  let next = 0
+  for (const part of raw.split('&')) {
+    const eq = part.indexOf('=')
+    const i = eq < 0 ? -1 : allowed.indexOf(part.slice(0, eq), next)
+    if (i < 0 || /[%+]/.test(part)) return badRequest()
+    next = i + 1
   }
   return null
 }

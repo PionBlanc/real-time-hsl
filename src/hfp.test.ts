@@ -60,6 +60,21 @@ describe('topic filters line up with real topics', () => {
     expect(parseMessage(topic, enc.encode('{"VP":{"lat":null,"long":null}}'))).toBeNull()
     expect(parseMessage(topic.replace('/bus/', '/ubus/'), payload)!.mode).toBe('bus')
   })
+  it('rejects or cleans malformed messages', () => {
+    const vp = { tst: '2026-11-17T14:40:00.000Z', lat: 60.18, long: 24.95, oday: '2026-11-17' }
+    const parse = (o: object) => parseMessage(topic, enc.encode(JSON.stringify({ VP: { ...vp, ...o } })))
+    expect(parse({})).not.toBeNull()
+    // Would make Intl date formatting throw / put NaN into Leaflet:
+    expect(parse({ tst: undefined })).toBeNull()
+    expect(parse({ tst: 'yesterday' })).toBeNull()
+    expect(parse({ lat: '60.18' })).toBeNull()
+    expect(parse({ long: 1e999 })).toBeNull() // JSON can't say Infinity; 1e999 parses to it
+    const m = parse({ spd: 'fast', oday: '17.11.2026' })!
+    expect(m.spd).toBeNull()
+    expect(m.oday).toBe('')
+    const t = parseMessage(topic.replace('/16:28/', '/4pm/'), enc.encode(JSON.stringify({ VP: vp })))!
+    expect(t.start).toBe('')
+  })
 })
 
 describe('time helpers', () => {
