@@ -1,5 +1,5 @@
-import { tripStartSeconds } from './hfp'
-import type { Msg } from './hfp'
+import { helsinkiDate, tripStartSeconds } from './hfp'
+import type { Mode, Msg } from './hfp'
 
 export interface TripStop {
   id: string // without "HSL:"
@@ -73,6 +73,104 @@ export function fetchRoutes(line: string): Promise<Array<RouteRef>> {
     })
     p.catch(() => routeCache.delete(key))
     routeCache.set(key, p)
+  }
+  return p
+}
+
+/** GTFS/OTP mode name → app mode. */
+export function gtfsMode(m: string): Mode | null {
+  switch (m) {
+    case 'BUS':
+      return 'bus'
+    case 'TRAM':
+      return 'tram'
+    case 'SUBWAY':
+      return 'metro'
+    case 'RAIL':
+      return 'train'
+    case 'FERRY':
+      return 'ferry'
+    default:
+      return null
+  }
+}
+
+export interface StopRef {
+  id: string // without "HSL:"
+  name: string
+  code: string
+  lat: number
+  lng: number
+  mode: Mode | null
+}
+
+export interface Departure {
+  line: string
+  mode: Mode | null
+  headsign: string
+  at: number // estimated (or scheduled) departure, unix seconds
+  sched: number // scheduled departure, unix seconds
+  clockSec: number // estimated departure, s since service-day midnight (for clock())
+  realtime: boolean
+  canceled: boolean
+  // For matching against live HFP vehicles:
+  route: string
+  dir: string
+  date: string // service day YYYY-MM-DD
+  start: number // trip start, s since service-day midnight (-1 = unknown)
+}
+
+export interface StopBoard {
+  stop: StopRef
+  platform: string
+  departures: Array<Departure>
+}
+
+export async function fetchStopBoard(id: string): Promise<StopBoard | null> {
+  const r = await fetch(`/api/stop?id=${encodeURIComponent(id)}`)
+  if (r.status === 503) throw new MissingKeyError()
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`stop ${r.status}`)
+  const d = await r.json()
+  type Row = [string, string, string, number, number, number, number, number, string, number, number]
+  return {
+    stop: { id, name: d.n, code: d.c, lat: d.la, lng: d.lo, mode: gtfsMode(d.m) },
+    platform: d.p,
+    departures: (d.d as Array<Row>).map((x) => ({
+      line: x[0],
+      mode: gtfsMode(x[1]),
+      headsign: x[2],
+      at: x[3] + x[5],
+      sched: x[3] + x[4],
+      clockSec: x[5],
+      realtime: x[6] === 1,
+      canceled: x[7] === 1,
+      route: x[8],
+      dir: String(x[9]),
+      // Service day starts at local midnight (noon - 12 h), so +12 h lands safely mid-day.
+      date: helsinkiDate(new Date((x[3] + 43200) * 1000)),
+      start: x[10],
+    })),
+  }
+}
+
+// Stops are fetched per fixed grid cell; keep in sync with api/stops.ts.
+export const CELL_LAT = 0.02
+export const CELL_LON = 0.04
+const cellCache = new Map<string, Promise<Array<StopRef>>>()
+
+export function fetchStopCell(la: number, lo: number): Promise<Array<StopRef>> {
+  const key = `${la}/${lo}`
+  let p = cellCache.get(key)
+  if (!p) {
+    p = fetch(`/api/stops?la=${la}&lo=${lo}`).then(async (r) => {
+      if (r.status === 503) throw new MissingKeyError()
+      if (!r.ok) throw new Error(`stops ${r.status}`)
+      const d = (await r.json()) as Array<[string, string, string, number, number, string]>
+      return d.map((s) => ({ id: s[0], name: s[1], code: s[2], lat: s[3], lng: s[4], mode: gtfsMode(s[5]) }))
+    })
+    p.catch(() => cellCache.delete(key))
+    cellCache.set(key, p)
   }
   return p
 }

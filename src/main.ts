@@ -10,17 +10,20 @@ import {
   areaFilters,
   clock,
   delayText,
+  helsinkiDate,
   nowServiceSeconds,
   parseMessage,
   routeFilter,
+  tripStartSeconds,
   vehicleFilter,
   vehicleNumberFilter,
 } from './hfp'
 import type { Mode, Msg } from './hfp'
 import { Vehicles } from './vehicles'
 import { TripLine, escapeHtml } from './trip-line'
-import { MissingKeyError, fetchRoutes, fetchTrip, tripKey } from './api'
-import type { Trip } from './api'
+import { MissingKeyError, fetchRoutes, fetchStopBoard, fetchTrip, tripKey } from './api'
+import type { Departure, StopBoard, StopRef, Trip } from './api'
+import { StopsLayer } from './stops'
 
 declare const __HAS_KEY__: boolean
 
@@ -104,7 +107,11 @@ let trip: Trip | null = null
 let tripK = ''
 let tripNote = ''
 
-const tripLine = new TripLine(map)
+// One canvas for route lines and stop dots, so taps reach both.
+const canvas = L.canvas({ tolerance: 10 })
+const tripLine = new TripLine(map, canvas, (s) => selectStop(s))
+const stopsLayer = new StopsLayer(map, canvas, (s) => selectStop(s))
+stopsLayer.modes = modes
 const vehicles = new Vehicles(map, (id) => select(id), onSelectedUpdate)
 const isSearchedVehicle = (m: Msg) => vehNums.includes(+m.veh)
 vehicles.filter = (m) =>
@@ -161,7 +168,10 @@ function updateTopics(): void {
 let moveTimer: ReturnType<typeof setTimeout> | undefined
 map.on('moveend', () => {
   clearTimeout(moveTimer)
-  moveTimer = setTimeout(updateTopics, 250)
+  moveTimer = setTimeout(() => {
+    updateTopics()
+    if (__HAS_KEY__) stopsLayer.update()
+  }, 250)
   const c = map.getCenter()
   store.set('view', { lat: +c.lat.toFixed(5), lng: +c.lng.toFixed(5), z: map.getZoom() })
 })
@@ -173,14 +183,19 @@ map.on('dragstart', () => {
   $('locate').classList.remove('on')
   document.querySelector('#card .fol')?.classList.remove('on')
 })
-map.on('click', () => select(null))
-document.addEventListener('keydown', (e) => e.key === 'Escape' && select(null))
+function closeAll(): void {
+  selectStop(null)
+  select(null)
+}
+map.on('click', closeAll)
+document.addEventListener('keydown', (e) => e.key === 'Escape' && closeAll())
 
 // ---------------------------------------------------------------- selection
 
 function select(id: string | null): void {
   if (selected === id) return
   selected = id
+  if (id && stopSel) selectStop(null)
   vehicles.setSelected(id)
   mapEl.classList.toggle('has-sel', !!id)
   tripLine.clear()
@@ -217,7 +232,7 @@ function loadTrip(m: Msg): void {
       if (k !== tripK) return
       trip = t
       if (!t) tripNote = 'Route details not found'
-      else tripLine.show(t, COLORS[m.mode])
+      else tripLine.show(t, COLORS[m.mode], m.mode)
     })
     .catch((e) => {
       if (k !== tripK) return
@@ -289,8 +304,10 @@ function renderCard(m: Msg): void {
 }
 
 $('card').addEventListener('click', (e) => {
-  const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act
-  if (act === 'close') select(null)
+  const el = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')
+  const act = el?.dataset.act
+  if (act === 'close') closeAll()
+  if (act === 'veh' && el?.dataset.id) select(el.dataset.id)
   if (act === 'follow' && selected) {
     followVehicle = !followVehicle
     const m = vehicles.get(selected)
@@ -300,6 +317,156 @@ $('card').addEventListener('click', (e) => {
     }
   }
 })
+
+$('card').addEventListener('keydown', (e) => {
+  const el = e.target as HTMLElement
+  if ((e.key === 'Enter' || e.key === ' ') && el.dataset.act === 'veh') {
+    e.preventDefault()
+    el.click()
+  }
+})
+
+// ---------------------------------------------------------------- stop departures board
+
+let stopSel: StopRef | null = null
+let board: StopBoard | null = null
+let boardNote = ''
+let boardSeq = 0
+let boardTimer: ReturnType<typeof setInterval> | undefined
+
+function selectStop(s: StopRef | null): void {
+  if (s && stopSel?.id === s.id) return
+  if (s) select(null)
+  stopSel = s
+  board = null
+  boardNote = ''
+  boardSeq++
+  clearInterval(boardTimer)
+  stopsLayer.setSelected(s && Number.isFinite(s.lat) ? s : null)
+  const u = new URL(location.href)
+  if (s) u.searchParams.set('stop', s.id)
+  else u.searchParams.delete('stop')
+  history.replaceState(null, '', u)
+  const card = $('card')
+  if (!s) {
+    if (!selected) card.hidden = true
+    return
+  }
+  card.hidden = false
+  renderBoard()
+  loadBoard()
+  // Count down every 10 s, refresh realtime estimates every 20 s.
+  let n = 0
+  boardTimer = setInterval(() => (++n % 2 === 0 ? loadBoard() : renderBoard()), 10_000)
+}
+
+function loadBoard(): void {
+  const s = stopSel
+  if (!s || document.hidden) return
+  const seq = ++boardSeq
+  fetchStopBoard(s.id)
+    .then((b) => {
+      if (seq !== boardSeq) return
+      if (!b) {
+        boardNote = 'Stop not found.'
+        return
+      }
+      board = b
+      boardNote = ''
+      if (!Number.isFinite(s.lat)) {
+        // Opened from a ?stop= link: now we know where it is.
+        stopSel = b.stop
+        stopsLayer.setSelected(b.stop)
+        followMe = false
+        locateBtn.classList.remove('on')
+        map.setView([b.stop.lat, b.stop.lng], Math.max(map.getZoom(), 16))
+      }
+    })
+    .catch((e) => {
+      if (seq !== boardSeq) return
+      boardNote =
+        e instanceof MissingKeyError
+          ? 'Departures need a Digitransit API key.'
+          : board
+            ? 'Could not refresh, showing the last known times.'
+            : 'Could not load departures.'
+    })
+    .finally(() => {
+      if (seq === boardSeq) renderBoard()
+    })
+}
+
+/** The live vehicle running this departure, if it's on the map. */
+function vehicleFor(d: Departure, live: Array<Msg>): Msg | undefined {
+  if (d.canceled || d.start < 0) return undefined
+  return live.find(
+    (m) =>
+      m.route === d.route &&
+      m.dir === d.dir &&
+      m.oday === d.date &&
+      !!m.start &&
+      tripStartSeconds(m.start, m.oday, m.tst) === d.start,
+  )
+}
+
+const PIN =
+  '<svg class="pin" viewBox="0 0 24 24" width="14" height="14"><path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2"/></svg>'
+
+function departureRow(d: Departure, nowS: number, live: Array<Msg>): string {
+  const mins = Math.floor((d.at - nowS) / 60)
+  const when = d.canceled ? 'Cancelled' : mins <= 0 ? 'Now' : mins < 20 ? `${mins} min` : clock(d.clockSec)
+  const late = Math.round((d.at - d.sched) / 60)
+  const title = d.canceled
+    ? 'Cancelled'
+    : d.realtime
+      ? `Realtime estimate${late > 0 ? `, ${late} min late` : late < 0 ? `, ${-late} min early` : ''} (scheduled ${clock(d.clockSec - (d.at - d.sched))})`
+      : 'Scheduled time (no realtime data)'
+  const veh = vehicleFor(d, live)
+  const cls = [d.canceled && 'cx', veh && 'on-map'].filter(Boolean).join(' ')
+  const attrs = veh
+    ? ` data-act="veh" data-id="${escapeHtml(veh.id)}" role="button" tabindex="0" aria-label="Show ${escapeHtml(d.line)} to ${escapeHtml(d.headsign)} on the map"`
+    : ''
+  return `<li class="${cls}"${attrs}>
+      <span class="ln" style="background:${d.mode ? COLORS[d.mode] : '#5d6874'}">${escapeHtml(d.line || '?')}</span>
+      <span class="hs"><span>${escapeHtml(d.headsign)}</span>${veh ? PIN : ''}</span>
+      <time class="${d.realtime && !d.canceled ? 'rt' : ''}" title="${escapeHtml(title)}">${when}</time>
+    </li>`
+}
+
+function renderBoard(): void {
+  if (!stopSel || selected) return
+  const s = board?.stop ?? stopSel
+  const nowS = Date.now() / 1000
+  const live = vehicles.visible()
+  const rows = (board?.departures ?? [])
+    .filter((d) => d.at - nowS > -30)
+    .slice(0, 8)
+    .map((d) => departureRow(d, nowS, live))
+    .join('')
+
+  const now = clock(nowServiceSeconds(helsinkiDate(new Date())))
+  const meta = [s.code, board?.platform ? `Platform ${board.platform}` : '', now]
+    .filter(Boolean)
+    .map(escapeHtml)
+    .join(' · ')
+  let body = ''
+  if (rows) body = `<ol class="board">${rows}</ol>`
+  else if (board) body = '<p class="note">No departures in the next 24 hours.</p>'
+  else if (!boardNote) body = '<p class="note">Loading departures…</p>'
+
+  $('card').innerHTML = `
+    <div class="ch">
+      <span class="badge" style="background:${s.mode ? COLORS[s.mode] : '#5d6874'}" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20"><rect x="6" y="3" width="12" height="10" rx="2"/><path d="M12 13v8M9 21h6"/></svg>
+      </span>
+      <div class="dest"><b>${escapeHtml(s.name || 'Stop')}</b><small>${meta}</small></div>
+      <button type="button" class="ib" data-act="close" aria-label="Close">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    ${body}
+    ${boardNote ? `<p class="note">${escapeHtml(boardNote)}</p>` : ''}`
+}
 
 // ---------------------------------------------------------------- GPS
 
@@ -472,6 +639,8 @@ modesEl.addEventListener('click', (e) => {
   store.set('modes', [...modes])
   renderModes()
   vehicles.refilter()
+  stopsLayer.modes = modes
+  stopsLayer.refilter()
 })
 
 // ---------------------------------------------------------------- hint / toast
@@ -508,6 +677,7 @@ document.addEventListener('visibilitychange', () => {
     if (Date.now() - hiddenAt > 20000) vehicles.markAllStale()
     mqtt.start()
     if (!locateBtn.classList.contains('denied')) startGps()
+    loadBoard() // no-op unless a stop board is open
   }
 })
 
@@ -515,9 +685,17 @@ q.value = terms.join(' ')
 clearBtn.hidden = !terms.length
 renderModes()
 updateTopics()
+if (__HAS_KEY__) stopsLayer.update()
 mqtt.start()
 startGps()
 startSearch()
+
+// ?stop=1130446 opens that stop's board (a shareable "my stop" link).
+const stopParam = new URL(location.href).searchParams.get('stop') ?? ''
+if (__HAS_KEY__ && /^[0-9A-Za-z_]{1,20}$/.test(stopParam)) {
+  userMoved = true // don't jump to GPS
+  selectStop({ id: stopParam, name: '', code: '', lat: NaN, lng: NaN, mode: null })
+}
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}))

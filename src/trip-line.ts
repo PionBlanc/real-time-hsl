@@ -1,5 +1,6 @@
 import L from 'leaflet'
-import type { Trip } from './api'
+import type { StopRef, Trip } from './api'
+import type { Mode } from './hfp'
 
 type LL = [number, number]
 
@@ -29,7 +30,6 @@ function project(p: LL, a: LL, b: LL, k: number): { pt: LL; d: number } {
  * ahead bold in the line colour, with stop dots (tap a dot for its name).
  */
 export class TripLine {
-  private renderer = L.canvas({ tolerance: 10 })
   private group = L.layerGroup()
   private behind: L.Polyline
   private casing: L.Polyline
@@ -41,7 +41,12 @@ export class TripLine {
   private color = '#007AC9'
   private nextK = -2
 
-  constructor(private map: L.Map) {
+  /** renderer: canvas shared with the stops layer, so taps reach both. */
+  constructor(
+    private map: L.Map,
+    private renderer: L.Renderer,
+    private onStopClick: (s: StopRef) => void,
+  ) {
     const r = this.renderer
     this.behind = L.polyline([], { renderer: r, color: '#8a94a0', weight: 4, opacity: 0.55, interactive: false })
     this.casing = L.polyline([], { renderer: r, color: '#fff', weight: 9, opacity: 0.9, interactive: false })
@@ -49,7 +54,7 @@ export class TripLine {
     this.group.addLayer(this.behind).addLayer(this.casing).addLayer(this.ahead)
   }
 
-  show(trip: Trip, color: string): void {
+  show(trip: Trip, color: string, mode: Mode): void {
     this.clear()
     this.trip = trip
     this.color = color
@@ -89,7 +94,9 @@ export class TripLine {
           direction: 'top',
           offset: [0, -6],
         })
-        .on('click', (e) => (e.target as L.CircleMarker).openTooltip()),
+        .on('click', () =>
+          this.onStopClick({ id: s.id, name: s.name, code: s.code, lat: s.lat, lng: s.lng, mode }),
+        ),
     )
     for (const d of this.stopDots) this.group.addLayer(d)
     this.group.addTo(this.map)

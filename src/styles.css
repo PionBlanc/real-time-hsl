@@ -130,14 +130,6 @@ svg {
 #modes {
   align-items: center;
 }
-#modes .lbl {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.85);
-  padding: 2px 8px;
-  border-radius: 10px;
-}
 #modes button {
   display: inline-flex;
   align-items: center;
@@ -304,6 +296,95 @@ svg {
   flex: none;
   font-variant-numeric: tabular-nums;
 }
+#card {
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ---------- stop departures board (styled like a stop's live display) ---------- */
+.board {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 4px 10px;
+  background: #0f2236;
+  border-radius: 10px;
+  color: #fff;
+}
+.board li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.board li:last-child {
+  border-bottom: 0;
+}
+.board .ln {
+  flex: none;
+  min-width: 44px;
+  padding: 2px 6px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 15px;
+  text-align: center;
+}
+.board .hs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 15px;
+}
+.board .hs span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.board .pin {
+  flex: none;
+  color: #8fd3ff;
+}
+.board time {
+  flex: none;
+  font-weight: 700;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: #ffc845;
+}
+/* Realtime estimate: a small pulsing "live" mark, like the displays at stops. */
+.board time.rt::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 5px 2px 0;
+  border-radius: 50%;
+  background: #6ee08a;
+  animation: pulse 1.2s ease-in-out infinite alternate;
+}
+.board li.cx .hs,
+.board li.cx .ln {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+.board li.cx time {
+  color: #ff8a80;
+  font-weight: 600;
+}
+.board li.on-map {
+  cursor: pointer;
+}
+.board li.on-map:hover,
+.board li.on-map:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  outline: 0;
+  margin: 0 -10px;
+  padding: 7px 10px;
+}
 .note {
   margin: 8px 0 0;
   font-size: 13px;
@@ -381,5 +462,8 @@ svg {
   .veh,
   .veh i {
     transition: none;
+  }
+  .board time.rt::before {
+    animation: none;
   }
 }
