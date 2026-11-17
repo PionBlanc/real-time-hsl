@@ -1,6 +1,6 @@
 // GET /api/stops?la=3008&lo=623
 // All stops in one fixed grid cell (CELL_LAT x CELL_LON degrees), so responses cache well.
-import { apiKey, graphql, json, noKey } from './_digitransit'
+import { apiKey, badRequest, canonicalInt, graphql, guard, json, noKey } from './_digitransit'
 
 export const config = { runtime: 'edge' }
 
@@ -24,15 +24,15 @@ interface Resp {
 }
 
 export default async function handler(req: Request): Promise<Response> {
+  const denied = guard(req, ['la', 'lo'])
+  if (denied) return denied
   const key = apiKey()
   if (!key) return noKey()
   const q = new URL(req.url).searchParams
-  const la = Number(q.get('la'))
-  const lo = Number(q.get('lo'))
+  const la = canonicalInt(q.get('la'))
+  const lo = canonicalInt(q.get('lo'))
   // Roughly the HSL region and its surroundings.
-  if (!Number.isInteger(la) || !Number.isInteger(lo) || la < 2900 || la > 3150 || lo < 500 || lo > 750) {
-    return json({ error: 'bad_request' }, 400, 'no-store')
-  }
+  if (la == null || lo == null || la < 2900 || la > 3150 || lo < 500 || lo > 750) return badRequest()
   try {
     const d = await graphql<Resp>(key, QUERY, {
       a: la * CELL_LAT,

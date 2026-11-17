@@ -46,8 +46,11 @@
       <button type="button" id="locate" aria-label="Show my location">
         <svg viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="4" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /><circle cx="12" cy="12" r="8" /></svg>
       </button>
-      <section id="card" hidden aria-live="polite"></section>
+      <section id="card" hidden aria-label="Details"></section>
     </div>
+
+    <!-- Screen-reader announcements. The card itself is not a live region: it re-renders every second. -->
+    <div id="sr" class="sr" aria-live="polite"></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

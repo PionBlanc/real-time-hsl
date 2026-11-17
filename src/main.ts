@@ -21,7 +21,7 @@ import {
 import type { Mode, Msg } from './hfp'
 import { Vehicles } from './vehicles'
 import { TripLine, escapeHtml } from './trip-line'
-import { MissingKeyError, departureKey, fetchRoutes, fetchStopBoard, fetchTrip, tripKey } from './api'
+import { MissingKeyError, STOP_PAGE, departureKey, fetchRoutes, fetchStopBoard, fetchTrip, tripKey } from './api'
 import type { Departure, StopBoard, StopRef, Trip } from './api'
 import { StopsLayer } from './stops'
 
@@ -194,6 +194,38 @@ function closeAll(): void {
 map.on('click', closeAll)
 document.addEventListener('keydown', (e) => e.key === 'Escape' && closeAll())
 
+// ---------------------------------------------------------------- card rendering
+
+const cardEl = $('card')
+const srEl = $('sr')
+let cardHtml = ''
+
+/**
+ * Replace the card's content. Skips identical HTML (the vehicle card re-renders every
+ * second), and puts keyboard focus back on the same control after a rebuild.
+ */
+function setCard(html: string): void {
+  if (html === cardHtml) return
+  cardHtml = html
+  const f = document.activeElement as HTMLElement | null
+  const act = f && cardEl.contains(f) ? f.dataset.act : undefined
+  const id = f?.dataset.id
+  cardEl.innerHTML = html
+  if (act) {
+    const sel = `[data-act="${act}"]${id ? `[data-id="${CSS.escape(id)}"]` : ''}`
+    cardEl.querySelector<HTMLElement>(sel)?.focus({ preventScroll: true })
+  }
+}
+
+/** Tell screen-reader users what just opened (once, not on every refresh). */
+let srTimer: ReturnType<typeof setTimeout> | undefined
+function announce(t: string): void {
+  clearTimeout(srTimer)
+  srEl.textContent = ''
+  // Setting the text after a tick makes a repeated identical message be read again.
+  srTimer = setTimeout(() => (srEl.textContent = t), 50)
+}
+
 // ---------------------------------------------------------------- selection
 
 function select(id: string | null): void {
@@ -218,6 +250,7 @@ function select(id: string | null): void {
     if (m) {
       map.panTo([m.lat, m.lng])
       onSelectedUpdate(m)
+      announce(`Line ${m.desi || 'unknown'}${m.headsign ? ` to ${m.headsign}` : ''}, vehicle ${+m.veh}`)
     }
     card.hidden = false
   }
@@ -294,7 +327,7 @@ function renderCard(m: Msg): void {
     }
   }
 
-  $('card').innerHTML = `
+  setCard(`
     <div class="ch">
       <span class="badge" style="background:${COLORS[m.mode]}">${escapeHtml(m.desi || '?')}</span>
       <div class="dest"><b>${escapeHtml(dest ? `→ ${dest}` : m.desi)}</b><small>${meta}</small></div>
@@ -304,7 +337,7 @@ function renderCard(m: Msg): void {
       </button>
     </div>
     ${stops ? `<ol class="stops">${stops}</ol>` : ''}
-    ${tripNote ? `<p class="note">${escapeHtml(tripNote)}</p>` : ''}`
+    ${tripNote ? `<p class="note">${escapeHtml(tripNote)}</p>` : ''}`)
 }
 
 $('card').addEventListener('click', (e) => {
@@ -339,7 +372,7 @@ let boardNote = ''
 let boardSeq = 0
 let boardTimer: ReturnType<typeof setInterval> | undefined
 // Scrolling the board pages further into the future.
-const PAGE = 20
+const PAGE = STOP_PAGE
 const MAX_DEPARTURES = 200
 let stopGen = 0
 let boardMore = true // more departures may exist after the loaded ones
@@ -380,7 +413,7 @@ function loadBoard(): void {
   const s = stopSel
   if (!s || document.hidden) return
   const seq = ++boardSeq
-  fetchStopBoard(s.id, PAGE)
+  fetchStopBoard(s.id)
     .then((b) => {
       if (seq !== boardSeq) return
       if (!b) {
@@ -392,7 +425,10 @@ function loadBoard(): void {
       const keys = new Set(b.departures.map(departureKey))
       const later =
         board && last ? board.departures.filter((d) => d.sched > last.sched && !keys.has(departureKey(d))) : []
-      if (!board) boardMore = b.departures.length >= PAGE
+      if (!board) {
+        boardMore = b.departures.length >= PAGE
+        announce(`${b.stop.name || 'Stop'} departures, ${b.departures.length ? `next: line ${b.departures[0].line}` : 'none soon'}`)
+      }
       board = { ...b, departures: [...b.departures, ...later].sort((x, y) => x.at - y.at) }
       boardNote = ''
       if (!Number.isFinite(s.lat)) {
@@ -424,12 +460,12 @@ function loadMore(): void {
   if (!s || !board || !boardMore || loadingMore || board.departures.length >= MAX_DEPARTURES) return
   const gen = stopGen
   const deps = board.departures
-  // Page from the latest scheduled time we have; overlap at that second is deduplicated.
+  // Page from the latest scheduled time we have; overlap in that minute is deduplicated.
   const start = Math.max(Math.max(...deps.map((d) => d.sched)), Date.now() / 1000)
   loadingMore = true
   moreFailed = false
   renderBoard()
-  fetchStopBoard(s.id, PAGE, start)
+  fetchStopBoard(s.id, start)
     .then((b) => {
       if (gen !== stopGen || !board) return
       const keys = new Set(board.departures.map(departureKey))
@@ -529,9 +565,8 @@ function renderBoard(): void {
   else if (board) body = '<p class="note">No departures in the next 24 hours.</p>'
   else if (!boardNote) body = '<p class="note">Loading departures…</p>'
 
-  const card = $('card')
-  const scroll = card.querySelector('.board')?.scrollTop ?? 0
-  card.innerHTML = `
+  const scroll = cardEl.querySelector('.board')?.scrollTop ?? 0
+  setCard(`
     <div class="ch">
       <span class="badge" style="background:${s.mode ? COLORS[s.mode] : '#5d6874'}" aria-hidden="true">
         <svg viewBox="0 0 24 24" width="20" height="20"><rect x="6" y="3" width="12" height="10" rx="2"/><path d="M12 13v8M9 21h6"/></svg>
@@ -542,8 +577,8 @@ function renderBoard(): void {
       </button>
     </div>
     ${body}
-    ${boardNote ? `<p class="note">${escapeHtml(boardNote)}</p>` : ''}`
-  const list = card.querySelector('.board')
+    ${boardNote ? `<p class="note">${escapeHtml(boardNote)}</p>` : ''}`)
+  const list = cardEl.querySelector('.board')
   if (list) list.scrollTop = scroll
 }
 

@@ -1,16 +1,19 @@
 // GET /api/routes?q=551  ->  [{ id: "2551", n: "551", m: "BUS" }]
 // Maps a line number as shown to passengers to HFP/GTFS route ids.
-import { apiKey, graphql, json, noKey } from './_digitransit'
+import { apiKey, badRequest, graphql, guard, json, noKey } from './_digitransit'
 
 export const config = { runtime: 'edge' }
 
 const QUERY = `query($n:String!){routes(name:$n){gtfsId shortName mode}}`
 
 export default async function handler(req: Request): Promise<Response> {
+  const denied = guard(req, ['q'])
+  if (denied) return denied
   const key = apiKey()
   if (!key) return noKey()
-  const q = (new URL(req.url).searchParams.get('q') ?? '').trim()
-  if (!/^[0-9A-Za-z]{1,8}$/.test(q)) return json({ error: 'bad_request' }, 400, 'no-store')
+  const q = new URL(req.url).searchParams.get('q') ?? ''
+  // Upper case only (the client upper-cases), so "m1" and "M1" don't cache separately.
+  if (!/^[0-9A-Z]{1,8}$/.test(q)) return badRequest()
   try {
     const d = await graphql<{ routes: Array<{ gtfsId: string; shortName: string | null; mode: string }> }>(
       key,

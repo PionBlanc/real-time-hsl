@@ -66,7 +66,7 @@ export function fetchRoutes(line: string): Promise<Array<RouteRef>> {
   const key = line.toUpperCase()
   let p = routeCache.get(key)
   if (!p) {
-    p = fetch(`/api/routes?q=${encodeURIComponent(line)}`).then((r) => {
+    p = fetch(`/api/routes?q=${encodeURIComponent(key)}`).then((r) => {
       if (r.status === 503) throw new MissingKeyError()
       if (!r.ok) throw new Error(`routes ${r.status}`)
       return r.json()
@@ -131,10 +131,17 @@ export function departureKey(d: Departure): string {
   return `${d.route}|${d.dir}|${d.date}|${d.start}|${d.sched}`
 }
 
-/** Next `n` departures from now, or from `start` (unix s) when paging further ahead. */
-export async function fetchStopBoard(id: string, n: number, start?: number): Promise<StopBoard | null> {
+/** Departures per board request; fixed server-side (PAGE in api/stop.ts). */
+export const STOP_PAGE = 20
+
+/**
+ * Next STOP_PAGE departures from now, or from `start` (unix s) when paging further ahead.
+ * `start` is rounded down to the minute (the API only accepts whole minutes, for caching),
+ * so a page may repeat departures from that minute; dedupe with departureKey().
+ */
+export async function fetchStopBoard(id: string, start?: number): Promise<StopBoard | null> {
   const r = await fetch(
-    `/api/stop?id=${encodeURIComponent(id)}&n=${n}${start != null ? `&start=${Math.floor(start)}` : ''}`,
+    `/api/stop?id=${encodeURIComponent(id)}${start != null ? `&start=${Math.floor(start / 60) * 60}` : ''}`,
   )
   if (r.status === 503) throw new MissingKeyError()
   if (r.status === 404) return null

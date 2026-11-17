@@ -1,7 +1,7 @@
-// GET /api/stop?id=1130446[&start=<unix s>&n=<count>]
+// GET /api/stop?id=1130446[&start=<unix s, whole minute>]
 // Next departures from one stop, with realtime estimates where available ("bus-stop screen").
 // `start` pages further into the future (departures at or after that time).
-import { apiKey, graphql, json, noKey } from './_digitransit'
+import { apiKey, badRequest, canonicalInt, graphql, guard, json, noKey } from './_digitransit'
 
 export const config = { runtime: 'edge' }
 
@@ -39,26 +39,29 @@ interface Resp {
   }
 }
 
+// Departures per request. Fixed (not a parameter) so it can't be varied to bypass the cache.
+// Keep in sync with STOP_PAGE in src/api.ts.
+const PAGE = 20
+
 export default async function handler(req: Request): Promise<Response> {
+  const denied = guard(req, ['id', 'start'])
+  if (denied) return denied
   const key = apiKey()
   if (!key) return noKey()
   const q = new URL(req.url).searchParams
   const id = q.get('id') ?? ''
   const startS = q.get('start')
-  const start = startS == null ? 0 : Number(startS) // 0 = now
-  const n = Number(q.get('n') ?? 20)
+  const start = startS == null ? 0 : canonicalInt(startS) // 0 = now
   const nowS = Date.now() / 1000
   if (
     !/^[0-9A-Za-z_]{1,20}$/.test(id) ||
-    !Number.isInteger(start) ||
-    (start !== 0 && (start < nowS - 3600 || start > nowS + 7 * 86400)) ||
-    !Number.isInteger(n) ||
-    n < 1 ||
-    n > 50
+    start == null ||
+    // Paging is by whole minutes, so at most one cache entry per stop per minute.
+    (start !== 0 && (start % 60 !== 0 || start < nowS - 3600 || start > nowS + 7 * 86400))
   )
-    return json({ error: 'bad_request' }, 400, 'no-store')
+    return badRequest()
   try {
-    const d = await graphql<Resp>(key, QUERY, { id: `HSL:${id}`, start, n })
+    const d = await graphql<Resp>(key, QUERY, { id: `HSL:${id}`, start, n: PAGE })
     const s = d.stop
     if (!s) return json({ error: 'not_found' }, 404, 'public, s-maxage=3600')
     return json(

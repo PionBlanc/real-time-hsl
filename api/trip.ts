@@ -1,6 +1,6 @@
 // GET /api/trip?route=2551&dir=1&date=2026-11-17&time=61200
 // Resolves a live HFP vehicle to its GTFS trip: path geometry + stops with scheduled times.
-import { apiKey, graphql, json, noKey } from './_digitransit'
+import { apiKey, badRequest, canonicalInt, graphql, guard, json, noKey } from './_digitransit'
 
 export const config = { runtime: 'edge' }
 
@@ -26,20 +26,25 @@ interface Resp {
 }
 
 export default async function handler(req: Request): Promise<Response> {
+  const denied = guard(req, ['route', 'dir', 'date', 'time'])
+  if (denied) return denied
   const key = apiKey()
   if (!key) return noKey()
   const q = new URL(req.url).searchParams
   const route = q.get('route') ?? ''
   const dir = q.get('dir') ?? ''
   const date = q.get('date') ?? ''
-  const time = Number(q.get('time'))
+  const time = canonicalInt(q.get('time'))
   if (
     !/^[0-9A-Za-z]{1,12}$/.test(route) ||
     !/^[12]$/.test(dir) ||
     !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-    !Number.isInteger(time) || time < 0 || time > 200000
+    // Live vehicles only run on yesterday's, today's or tomorrow's service day.
+    !(Math.abs(Date.parse(`${date}T12:00:00Z`) - Date.now()) < 2 * 86_400_000) ||
+    // HFP start times are HH:mm, so whole minutes, at most 48 h into the service day.
+    time == null || time % 60 !== 0 || time > 172_800
   ) {
-    return json({ error: 'bad_request' }, 400, 'no-store')
+    return badRequest()
   }
   try {
     const d = await graphql<Resp>(key, QUERY, {
