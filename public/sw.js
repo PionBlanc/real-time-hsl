@@ -2,7 +2,7 @@
 // - /assets/* are content-hashed → cache-first.
 // - The page itself → stale-while-revalidate (instant open, updates next time).
 // - /api/* and live data are never touched here (tiles use normal HTTP caching).
-const CACHE = 'hsl-live-v2'
+const CACHE = 'hsl-live-v3'
 
 self.addEventListener('install', () => self.skipWaiting())
 self.addEventListener('activate', (e) => {
