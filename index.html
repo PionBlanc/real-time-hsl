@@ -4,15 +4,60 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#007AC9" />
-    <meta name="description" content="Live HSL vehicle positions around you" />
+    <meta name="description" content="See every HSL bus, tram, metro, train and ferry in Helsinki, Espoo and Vantaa move on a live map. Find vehicles near you, follow a line and see upcoming stops in real time." />
+    <link rel="canonical" href="https://hsl-live.pionblanc.fi/" />
+    <link rel="alternate" hreflang="en" href="https://hsl-live.pionblanc.fi/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://hsl-live.pionblanc.fi/" />
+    <meta property="og:site_name" content="HSL Live" />
+    <meta property="og:title" content="HSL Live – real-time buses, trams & metro on a map" />
+    <meta property="og:description" content="Every HSL vehicle in the Helsinki region, moving live on a map. Bussit, ratikat ja metrot kartalla reaaliajassa." />
+    <meta property="og:image" content="https://hsl-live.pionblanc.fi/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Map of central Helsinki with live bus, tram, metro and train markers" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="fi_FI" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "HSL Live",
+        "url": "https://hsl-live.pionblanc.fi/",
+        "description": "Real-time map of HSL buses, trams, metro, commuter trains and ferries in the Helsinki region.",
+        "applicationCategory": "TravelApplication",
+        "operatingSystem": "Any",
+        "inLanguage": "en",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
+        "areaServed": { "@type": "City", "name": "Helsinki" }
+      }
+    </script>
+
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="preconnect" href="https://mqtt.hsl.fi" crossorigin />
-    <title>HSL Live</title>
+    <title>HSL Live – Real-time buses, trams & metro on a map | Helsinki</title>
   </head>
   <body>
+    <!-- Crawlable text for a page that is otherwise a JS-rendered map. Visually hidden, read by screen readers too. -->
+    <header class="sr">
+      <h1>HSL Live – real-time public transport map for Helsinki</h1>
+      <p>
+        Live positions of every HSL bus, tram, metro, commuter train and ferry in Helsinki, Espoo, Vantaa and
+        Kauniainen. Search a line or vehicle number, see vehicles near you and follow one along its route.
+      </p>
+      <p lang="fi">HSL:n bussit, raitiovaunut, metrot, junat ja lautat kartalla reaaliajassa.</p>
+    </header>
+    <noscript>
+      <p>HSL Live shows HSL vehicles moving on a live map. Please enable JavaScript to use it.</p>
+    </noscript>
+
     <div id="map"></div>
 
     <div id="top">

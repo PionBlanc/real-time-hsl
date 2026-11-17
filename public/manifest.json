@@ -1,11 +1,14 @@
 {
   "name": "HSL Live",
   "short_name": "HSL Live",
-  "description": "Live HSL vehicle positions around you",
+  "description": "Real-time map of HSL buses, trams, metro, trains and ferries in the Helsinki region",
   "icons": [
     { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any" },
     { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192" },
     { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any maskable" }
+  ],
+  "screenshots": [
+    { "src": "/app-screenshot.webp", "type": "image/webp", "sizes": "4800x2520", "form_factor": "wide", "label": "Live vehicles on a map of central Helsinki" }
   ],
   "start_url": "/",
   "display": "standalone",
