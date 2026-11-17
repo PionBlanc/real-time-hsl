@@ -142,8 +142,13 @@ const statusEl = $('status')
 const STATUS_TEXT: Record<MqttStatus, string> = {
   online: 'Live',
   connecting: 'Connecting…',
-  offline: 'Offline',
+  offline: 'No connection',
 }
+/** Don't flash a connection hint for blips that resolve this fast (e.g. resuming the tab). */
+const CONN_HINT_DELAY_MS = 3000
+let wasOnline = false
+let lastStatus: MqttStatus = 'offline'
+let connHintTimer: ReturnType<typeof setTimeout> | undefined
 const mqtt = new MqttClient(
   BROKER,
   (topic, payload) => {
@@ -153,6 +158,26 @@ const mqtt = new MqttClient(
   (s) => {
     statusEl.className = `dot ${s}`
     statusEl.title = STATUS_TEXT[s]
+    const prev = lastStatus
+    lastStatus = s
+    clearTimeout(connHintTimer)
+    if (s === 'online') {
+      wasOnline = true
+      setConnHint('')
+      return
+    }
+    if (document.hidden) return setConnHint('') // stopped on purpose; nothing to tell
+    // Lost the live feed: show at once that positions are no longer current.
+    if (prev === 'online') vehicles.markAllStale()
+    const text =
+      s === 'offline'
+        ? 'No connection – vehicle positions may be out of date'
+        : wasOnline
+          ? 'Reconnecting… vehicle positions may be out of date'
+          : 'Connecting…'
+    // Going offline is certain, so say it now; connecting usually succeeds quickly.
+    if (s === 'offline') setConnHint(text)
+    else connHintTimer = setTimeout(() => setConnHint(text), CONN_HINT_DELAY_MS)
   },
 )
 
@@ -198,7 +223,7 @@ function updateTopics(): void {
   // After pruning, so markers aren't rebuilt for vehicles that are about to go.
   // Line searches are few vehicles: keep their labels at any zoom.
   vehicles.setCompact(!lineMode && z < COMPACT_BELOW_ZOOM)
-  setHint(hint)
+  setZoomHint(hint)
 }
 
 let moveTimer: ReturnType<typeof setTimeout> | undefined
@@ -844,10 +869,21 @@ modesEl.addEventListener('click', (e) => {
 
 const hintEl = $('hint')
 let hintText = ''
+let zoomHint = ''
+let connHint = ''
 let toastTimer: ReturnType<typeof setTimeout> | undefined
-function setHint(t: string): void {
-  hintText = t
-  if (!toastTimer) showHint(t)
+/** The persistent hint: connection problems outrank "zoom in". */
+function setHint(): void {
+  hintText = connHint || zoomHint
+  if (!toastTimer) showHint(hintText)
+}
+function setZoomHint(t: string): void {
+  zoomHint = t
+  setHint()
+}
+function setConnHint(t: string): void {
+  connHint = t
+  setHint()
 }
 function showHint(t: string): void {
   hintEl.textContent = t

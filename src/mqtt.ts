@@ -1,7 +1,7 @@
 /**
  * Tiny MQTT 3.1.1 subscriber over WebSocket (~2 KB instead of mqtt.js's ~90 KB).
  * Supports only what this app needs: CONNECT, SUBSCRIBE/UNSUBSCRIBE (QoS 0),
- * incoming PUBLISH, keepalive pings and automatic reconnect.
+ * incoming PUBLISH, keepalive pings, dead-connection detection and automatic reconnect.
  */
 
 export type MqttStatus = 'connecting' | 'online' | 'offline'
@@ -54,14 +54,27 @@ export function unsubscribePacket(id: number, topics: Array<string>): Uint8Array
 
 const PINGREQ = new Uint8Array([0xc0, 0])
 
+/** navigator.onLine === false is reliable; true only means "maybe". */
+const isOffline = (): boolean => globalThis.navigator?.onLine === false
+
 const KEEPALIVE_S = 30
+/** How often the connection watchdog runs. */
+const TICK_MS = 2_000
+/** Ping at least this often, so the broker's keepalive (1.5 × KEEPALIVE_S) never fires. */
 const PING_MS = 15_000
 /**
- * Declare the connection dead after this long without any bytes from the broker. A healthy
- * broker answers every PINGREQ, so this is about two missed pings. Needed because mobile
- * network changes often leave a WebSocket half-open: no close event for minutes.
+ * Live HFP traffic is ~1 message per vehicle per second, so this long without a byte is
+ * suspicious: ping to find out whether the connection is still there.
  */
-const DEAD_MS = 40_000
+const IDLE_MS = 5_000
+/**
+ * Declare the connection dead if a ping goes unanswered (no bytes at all) this long.
+ * Needed because a tunnel or network change often leaves a WebSocket half-open:
+ * no close event for minutes.
+ */
+const PING_TIMEOUT_MS = 5_000
+/** Upper bound for the reconnect backoff. */
+const MAX_RETRY_MS = 5_000
 /** Largest packet accepted from the broker. */
 const MAX_PACKET = 1 << 20
 
@@ -74,6 +87,9 @@ export class MqttClient {
   private pid = 0
   private retries = 0
   private lastRx = 0
+  private lastTx = 0
+  /** When the unanswered ping was sent; 0 when no ping is pending. */
+  private pingAt = 0
   private running = false
   private pingTimer: ReturnType<typeof setInterval> | undefined
   private retryTimer: ReturnType<typeof setTimeout> | undefined
@@ -88,14 +104,42 @@ export class MqttClient {
   start(): void {
     if (this.running) return
     this.running = true
-    this.open()
+    this.retries = 0
+    globalThis.addEventListener?.('online', this.onOnline)
+    globalThis.addEventListener?.('offline', this.onOffline)
+    if (isOffline()) this.onOffline()
+    else this.open()
   }
 
   stop(): void {
     this.running = false
+    globalThis.removeEventListener?.('online', this.onOnline)
+    globalThis.removeEventListener?.('offline', this.onOffline)
     clearTimeout(this.retryTimer)
     this.teardown()
     this.setStatus('offline')
+  }
+
+  /** The device lost its network: no point waiting for the socket to time out, or retrying. */
+  private onOffline = (): void => {
+    if (!this.running) return
+    clearTimeout(this.retryTimer)
+    this.teardown()
+    this.setStatus('offline')
+  }
+
+  /** The network is back: reconnect now instead of after the backoff. */
+  private onOnline = (): void => {
+    if (!this.running) return
+    this.retries = 0
+    if (this.status === 'online') {
+      // The network may have changed under a live socket (e.g. Wi-Fi → mobile): verify it.
+      this.ping()
+      return
+    }
+    clearTimeout(this.retryTimer)
+    this.teardown()
+    this.open()
   }
 
   /** Declare the full set of topic filters wanted; the diff is sent to the broker. */
@@ -122,7 +166,10 @@ export class MqttClient {
   }
 
   private send(p: Uint8Array): void {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(p)
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(p)
+      this.lastTx = Date.now()
+    }
   }
 
   private setStatus(s: MqttStatus): void {
@@ -148,6 +195,7 @@ export class MqttClient {
     ws.onopen = () => ws.send(connectPacket(id, KEEPALIVE_S))
     ws.onmessage = (e) => {
       this.lastRx = Date.now()
+      this.pingAt = 0 // any byte proves the connection is alive
       this.feed(new Uint8Array(e.data as ArrayBuffer))
     }
     ws.onerror = () => ws.close()
@@ -163,6 +211,7 @@ export class MqttClient {
 
   private teardown(): void {
     clearInterval(this.pingTimer)
+    this.pingAt = 0
     clearTimeout(this.connectTimer)
     const ws = this.ws
     this.ws = null
@@ -178,19 +227,34 @@ export class MqttClient {
   }
 
   private scheduleRetry(): void {
+    // No network: wait for the 'online' event rather than retrying into the void.
+    if (isOffline()) return this.setStatus('offline')
     this.setStatus('connecting')
     // Jitter, so clients don't all reconnect in lockstep after a broker restart.
-    const delay = Math.min(1000 * 2 ** this.retries, 15000) * (0.75 + Math.random() * 0.5)
+    const delay = Math.min(1000 * 2 ** this.retries, MAX_RETRY_MS) * (0.75 + Math.random() * 0.5)
     this.retries++
     clearTimeout(this.retryTimer)
     this.retryTimer = setTimeout(() => this.running && this.open(), delay)
   }
 
-  /** Ping the broker, or drop and reconnect if it has gone silent. */
-  private keepalive(): void {
-    // Don't wait for the dead socket's close event: tear down and reconnect now.
-    if (Date.now() - this.lastRx > DEAD_MS) this.drop()
-    else this.send(PINGREQ)
+  /**
+   * Runs every TICK_MS while online. Pings when the stream has gone quiet (or the broker's
+   * keepalive is due), and drops the connection when a ping goes unanswered.
+   */
+  private watchdog(): void {
+    const now = Date.now()
+    if (this.pingAt) {
+      // Don't wait for the dead socket's close event: tear down and reconnect now.
+      if (now - this.pingAt >= PING_TIMEOUT_MS) this.drop()
+    } else if (now - this.lastRx >= IDLE_MS || now - this.lastTx >= PING_MS) {
+      this.ping()
+    }
+  }
+
+  private ping(): void {
+    if (this.status !== 'online') return
+    this.send(PINGREQ)
+    if (!this.pingAt) this.pingAt = Date.now()
   }
 
   /** Abandon this connection and reconnect (after the usual backoff). */
@@ -242,8 +306,9 @@ export class MqttClient {
         }
         this.retries = 0
         this.setStatus('online')
-        this.lastRx = Date.now()
-        this.pingTimer = setInterval(() => this.keepalive(), PING_MS)
+        this.lastRx = this.lastTx = Date.now()
+        this.pingAt = 0
+        this.pingTimer = setInterval(() => this.watchdog(), TICK_MS)
         this.sync()
         return
       case 3: {
