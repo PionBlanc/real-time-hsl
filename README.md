@@ -34,7 +34,7 @@ moving in real time.
 | `api/stop.ts` | Edge function: a stop's next departures (realtime where available) | CDN-cached 15 s |
 | `api/stops.ts` | Edge function: stops in one grid cell | CDN-cached 1 day |
 | `api/routes.ts` | Edge function: line number → route ids, for the line filter | CDN-cached |
-| `api/tile.ts` | Edge function: proxies HSL's English background map tiles | CDN-cached 30 days |
+| `api/tile.ts` | Node function (Stockholm): proxies HSL's English background map tiles and converts them to WebP | CDN-cached 30 days |
 | `public/sw.js` | Service worker: the app opens instantly from cache after the first visit | |
 
 The whole app is about 52 KB of JS and 8 KB of CSS (gzipped), mostly Leaflet. Live data

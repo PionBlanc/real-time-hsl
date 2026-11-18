@@ -76,7 +76,8 @@ the source pages. It was last checked on **2026-11-17**. The terms can change wi
 
 ### 6. Map tiles
 - Use map **v3**: `cdn.digitransit.fi/map/v3/<source>/…`. v1 and v2 have been removed.
-- **In the app:** `api/tile.ts` proxies the `hsl-map-en` source with the key in a header.
+- **In the app:** `api/tile.ts` proxies the `hsl-map-en` source with the key in a header and
+  converts the tiles to WebP. The map's attribution stays as described in section 1.
 
 ### 7. HFP / MQTT (`wss://mqtt.hsl.fi:443/`, no key needed)
 - In browsers, use port 443 (TLS). The docs prefer it to protect users' location privacy.

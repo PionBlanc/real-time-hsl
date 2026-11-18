@@ -20,7 +20,9 @@ function vercelApiDev(): Plugin {
             if (typeof v === 'string') headers.set(k, v)
             else if (Array.isArray(v)) headers.set(k, v.join(', '))
           }
-          const resp: Response = await mod.default(new Request(`http://localhost${req.url}`, { headers }))
+          // Edge functions export a handler; Node functions (api/tile.ts) export { fetch: handler }.
+          const handler = mod.default.fetch ?? mod.default
+          const resp: Response = await handler(new Request(`http://localhost${req.url}`, { headers }))
           res.statusCode = resp.status
           resp.headers.forEach((v, k) => res.setHeader(k, v))
           res.end(Buffer.from(await resp.arrayBuffer()))

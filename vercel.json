@@ -1,5 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/tile.ts": { "regions": ["arn1"] }
+  },
   "headers": [
     {
       "source": "/(.*)",
