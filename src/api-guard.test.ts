@@ -16,7 +16,7 @@ describe('guard', () => {
     expect(guard(req('id=1&id=2'), ['id'])?.status).toBe(400)
   })
   it('only accepts the canonical spelling (one cache key per value)', () => {
-    expect(guard(req('z=1&x=2&y=3&r=@2x'), ['z', 'x', 'y', 'r'])).toBeNull()
+    expect(guard(req('z=1&x=2&y=3&r=2x'), ['z', 'x', 'y', 'r'])).toBeNull()
     expect(guard(req('z=1&x=2&y=3&r='), ['z', 'x', 'y', 'r'])).toBeNull()
     expect(guard(req('id=1'), ['id', 'start'])).toBeNull() // optional params may be left out
     expect(guard(req(''), ['id'])).toBeNull()

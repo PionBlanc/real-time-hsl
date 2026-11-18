@@ -83,7 +83,8 @@ map.attributionControl.addAttribution(
 const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } })
   .connection
 const lowData = !!conn?.saveData || /2g/.test(conn?.effectiveType ?? '')
-const retina = devicePixelRatio >= 1.5 && !lowData ? '@2x' : ''
+// Plain "2x", not "@2x": Vercel percent-encodes "@", which the API guard rejects.
+const retina = devicePixelRatio >= 1.5 && !lowData ? '2x' : ''
 
 if (__HAS_KEY__) {
   // HSL's own map (512 px tiles), proxied so the API key stays secret.

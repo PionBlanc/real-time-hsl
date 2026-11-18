@@ -1,4 +1,4 @@
-// GET /api/tile?z=13&x=4663&y=2371&r=@2x
+// GET /api/tile?z=13&x=4663&y=2371&r=2x
 // Proxies HSL's background map tiles so the Digitransit key stays server-side.
 // Responses are cached hard by Vercel's CDN and the browser.
 import { UPSTREAM_TIMEOUT_MS, apiKey, canonicalInt, guard } from './_digitransit'
@@ -42,14 +42,15 @@ export default async function handler(req: Request): Promise<Response> {
   const z = canonicalInt(q.get('z'))
   const x = canonicalInt(q.get('x'))
   const y = canonicalInt(q.get('y'))
-  // Leaflet always sends r: empty, or "@2x" on high-DPI screens.
+  // Leaflet always sends r: empty, or "2x" on high-DPI screens.
   const r = q.get('r')
-  if (z == null || x == null || y == null || (r !== '' && r !== '@2x') || !tileInArea(z, x, y)) {
+  if (z == null || x == null || y == null || (r !== '' && r !== '2x') || !tileInArea(z, x, y)) {
     return bad()
   }
+  const suffix = r === '2x' ? '@2x' : ''
   let up: Response
   try {
-    up = await fetch(`https://cdn.digitransit.fi/map/v3/${SOURCE}/${z}/${x}/${y}${r}.png`, {
+    up = await fetch(`https://cdn.digitransit.fi/map/v3/${SOURCE}/${z}/${x}/${y}${suffix}.png`, {
       headers: { 'digitransit-subscription-key': key },
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     })
