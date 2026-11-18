@@ -414,59 +414,15 @@ svg {
 }
 
 /* ---------- vehicle markers ---------- */
-.veh {
-  transition: transform 1s linear, opacity 0.3s;
-}
-.zooming .veh {
-  transition: none !important;
-}
-.veh .w {
+/* Drawn by src/vehicle-canvas.ts. Taps are hit-tested there, so they pass through here. */
+.veh-canvas {
   position: absolute;
   left: 0;
   top: 0;
+  pointer-events: none;
 }
-.veh b {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  min-width: 24px;
-  height: 24px;
-  padding: 0 5px;
-  box-sizing: border-box;
-  border-radius: 12px;
-  border: 2px solid #fff;
-  background: var(--c);
-  color: #fff;
-  font: 700 11px/20px system-ui, sans-serif;
-  text-align: center;
-  white-space: nowrap;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-  transition: transform 0.15s;
-}
-.veh i {
-  position: absolute;
-  width: 0;
-  height: 0;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-bottom: 8px solid var(--c);
-  transform: translate(-50%, -50%) rotate(var(--h, 0deg)) translateY(var(--d, -17px));
-  transition: transform 1s linear;
-}
-.veh.sel i {
-  --d: -24px;
-}
-.veh.stale {
-  opacity: 0.4;
-}
-.has-sel .veh:not(.sel) {
-  opacity: 0.3;
-}
-.has-sel .veh.same-line {
-  opacity: 1;
-}
-.veh.sel b {
-  transform: translate(-50%, -50%) scale(1.3);
-  box-shadow: 0 0 0 3px var(--c), 0 2px 8px rgba(0, 0, 0, 0.4);
+.veh-hover {
+  cursor: pointer;
 }
 .me {
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
@@ -481,10 +437,6 @@ svg {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .veh,
-  .veh i {
-    transition: none;
-  }
   .board time.rt::before {
     animation: none;
   }

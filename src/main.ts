@@ -102,12 +102,6 @@ if (__HAS_KEY__) {
   }).addTo(map)
 }
 
-// No marker glide while Leaflet re-positions everything on zoom.
-map.on('zoomstart', () => mapEl.classList.add('zooming'))
-map.on('zoomend', () =>
-  requestAnimationFrame(() => requestAnimationFrame(() => mapEl.classList.remove('zooming'))),
-)
-
 // ---------------------------------------------------------------- state
 
 let modes = new Set<Mode>((store.get<Array<Mode>>('modes') ?? MODES).filter((m) => MODES.includes(m)))
@@ -311,7 +305,6 @@ function select(id: string | null): void {
   selected = id
   if (id && stopSel) selectStop(null)
   vehicles.setSelected(id)
-  mapEl.classList.toggle('has-sel', !!id)
   tripLine.clear()
   trip = null
   tripK = ''

@@ -1,18 +1,13 @@
 import L from 'leaflet'
 import { COLORS } from './hfp'
 import type { Msg } from './hfp'
-
-/** Full marker: DOM element with line label, heading arrow and smooth movement. */
-interface Dom {
-  marker: L.Marker
-  el: HTMLElement
-  label: HTMLElement
-  arrow: HTMLElement
-}
+import { VehicleCanvas } from './vehicle-canvas'
+import type { Sprite } from './vehicle-canvas'
 
 interface V {
   msg: Msg
-  dom: Dom | null
+  /** Full marker: line label, heading arrow and smooth movement. */
+  sprite: Sprite | null
   /** Compact marker: a plain dot on the shared canvas, used when zoomed out. */
   dot: L.CircleMarker | null
   dotOpacity: number
@@ -26,15 +21,17 @@ const STALE_MS = 30_000
 const REMOVE_MS = 120_000
 
 /**
- * Vehicle markers. Updates are batched per animation frame; movement between
- * 1 Hz updates is smoothed with a CSS transform transition (see styles.css).
+ * Vehicle markers. Updates are batched per animation frame; full markers are drawn
+ * and animated by VehicleCanvas.
  *
- * In compact mode (zoomed out, often 1000+ vehicles) they are drawn as dots on a
- * canvas instead: one element instead of a DOM node per vehicle, no labels, no
- * animation. The selected vehicle always keeps its full marker.
+ * In compact mode (zoomed out, often 1000+ vehicles) they are plain dots on the shared
+ * canvas instead: no labels, no animation. The selected vehicle always keeps its full
+ * marker.
  */
 export class Vehicles {
   private all = new Map<string, V>()
+  private sprites: VehicleCanvas
+  private ids = new WeakMap<Sprite, string>()
   private pending = new Map<string, Msg>()
   private raf = 0
   private selected: string | null = null
@@ -51,6 +48,10 @@ export class Vehicles {
     private onClick: (id: string) => void,
     private onSelectedUpdate: (m: Msg) => void,
   ) {
+    this.sprites = new VehicleCanvas(map, (s) => {
+      const id = this.ids.get(s)
+      if (id) this.onClick(id)
+    })
     setInterval(() => this.sweep(), 5000)
   }
 
@@ -90,7 +91,7 @@ export class Vehicles {
     }
     if (!v) {
       if (!isSel && this.area && !this.anywhere(m) && !this.area.contains([m.lat, m.lng])) return
-      v = { msg: m, dom: null, dot: null, dotOpacity: 1, last: 0, stale: false, rot: null, sameLine: false }
+      v = { msg: m, sprite: null, dot: null, dotOpacity: 1, last: 0, stale: false, rot: null, sameLine: false }
       v.sameLine = this.isSameLine(m.id, m)
       this.all.set(m.id, v)
     }
@@ -103,11 +104,10 @@ export class Vehicles {
     const turned = m.hdg != null && (m.spd ?? 0) > 0.5
     if (turned) v.rot = v.rot == null ? m.hdg! : v.rot + ((((m.hdg! - v.rot) % 360) + 540) % 360) - 180
 
-    if (v.dom) {
-      v.dom.marker.setLatLng([m.lat, m.lng])
-      if (prevDesi !== m.desi) v.dom.label.textContent = m.desi || '?'
-      if (turned) this.setArrow(v.dom, v.rot)
-      if (wasStale) v.dom.el.classList.remove('stale')
+    if (v.sprite) {
+      this.sprites.move(v.sprite, m.lat, m.lng, v.rot)
+      if (prevDesi !== m.desi) this.sprites.setLabel(v.sprite, m.desi || '?')
+      if (wasStale) this.styleSprite(v)
     } else if (v.dot) {
       v.dot.setLatLng([m.lat, m.lng])
       if (wasStale) this.styleDot(v)
@@ -129,56 +129,33 @@ export class Vehicles {
         v.dot.remove()
         v.dot = null
       }
-      v.dom ??= this.createDom(v)
-      this.styleDom(v)
+      v.sprite ??= this.createSprite(v)
+      this.styleSprite(v)
     } else {
-      if (v.dom) {
-        v.dom.marker.remove()
-        v.dom = null
+      if (v.sprite) {
+        this.sprites.remove(v.sprite)
+        v.sprite = null
       }
       v.dot ??= this.createDot(v)
       this.styleDot(v)
     }
   }
 
-  private createDom(v: V): Dom {
+  private createSprite(v: V): Sprite {
     const m = v.msg
-    const wrap = document.createElement('span')
-    wrap.className = 'w'
-    wrap.style.setProperty('--c', COLORS[m.mode])
-    const arrow = document.createElement('i')
-    arrow.style.display = 'none'
-    const label = document.createElement('b')
-    label.textContent = m.desi || '?'
-    wrap.append(arrow, label)
-    const marker = L.marker([m.lat, m.lng], {
-      icon: L.divIcon({
-        className: `veh ${m.mode}`,
-        html: wrap,
-        iconSize: null as unknown as L.PointExpression,
-      }),
-      keyboard: false,
-    })
-    marker.on('click', () => this.onClick(m.id))
-    marker.addTo(this.map)
-    const dom = { marker, el: marker.getElement()!, label, arrow }
-    this.setArrow(dom, v.rot)
-    return dom
+    const s = this.sprites.add(m.mode, m.desi || '?', m.lat, m.lng, v.rot, this.spriteOpacity(v))
+    this.ids.set(s, m.id)
+    return s
   }
 
-  private setArrow(dom: Dom, rot: number | null): void {
-    if (rot == null) return
-    dom.arrow.style.setProperty('--h', `${rot}deg`)
-    dom.arrow.style.display = ''
+  /** Others dim while a vehicle is selected, except those on the same line. */
+  private spriteOpacity(v: V): number {
+    if (this.selected && v.msg.id !== this.selected) return v.sameLine ? 1 : 0.3
+    return v.stale ? 0.4 : 1
   }
 
-  private styleDom(v: V): void {
-    const d = v.dom!
-    const sel = v.msg.id === this.selected
-    d.el.classList.toggle('sel', sel)
-    d.el.classList.toggle('same-line', v.sameLine)
-    d.el.classList.toggle('stale', v.stale)
-    d.marker.setZIndexOffset(sel ? 10000 : 0)
+  private styleSprite(v: V): void {
+    this.sprites.setStyle(v.sprite!, this.spriteOpacity(v), v.msg.id === this.selected)
   }
 
   private createDot(v: V): L.CircleMarker {
@@ -208,7 +185,7 @@ export class Vehicles {
   private remove(id: string): void {
     const v = this.all.get(id)
     if (!v) return
-    v.dom?.marker.remove()
+    if (v.sprite) this.sprites.remove(v.sprite)
     v.dot?.remove()
     this.all.delete(id)
   }
@@ -240,7 +217,7 @@ export class Vehicles {
 
   private setStale(v: V): void {
     v.stale = true
-    if (v.dom) v.dom.el.classList.add('stale')
+    if (v.sprite) this.styleSprite(v)
     else if (v.dot) this.styleDot(v)
   }
 
