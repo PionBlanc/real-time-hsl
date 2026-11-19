@@ -46,6 +46,13 @@ const store = {
       /* private mode etc. */
     }
   },
+  remove(k: string) {
+    try {
+      localStorage.removeItem(k)
+    } catch {
+      /* private mode etc. */
+    }
+  },
 }
 
 // ---------------------------------------------------------------- map
@@ -325,6 +332,7 @@ map.on('dragstart', () => {
   $('locate').classList.remove('on')
 })
 function closeAll(): void {
+  setInfo(false)
   selectStop(null)
   select(null)
 }
@@ -381,6 +389,7 @@ function select(id: string | null): void {
     return
   }
   selected = id
+  if (id) setInfo(false)
   if (id && stopSel) selectStop(null)
   vehicles.setSelected(id)
   tripLine.clear()
@@ -494,6 +503,7 @@ $('card').addEventListener('click', (e) => {
   if (act === 'close') closeAll()
   if (act === 'veh' && el?.dataset.id) select(el.dataset.id)
   if (act === 'more') loadMore()
+  if (act === 'forget') forgetLocation()
 })
 
 $('card').addEventListener('keydown', (e) => {
@@ -503,6 +513,77 @@ $('card').addEventListener('keydown', (e) => {
     el.click()
   }
 })
+
+// ---------------------------------------------------------------- about & privacy (the (i) button)
+
+const infoBtn = $('info')
+let infoOpen = false
+/** Set after "Forget my location", to confirm it in the panel. */
+let forgotten = false
+
+/** Open or close the about & privacy panel. It uses the card, so it replaces a vehicle or stop. */
+function setInfo(open: boolean): void {
+  if (open === infoOpen) return
+  infoOpen = open
+  infoBtn.setAttribute('aria-expanded', String(open))
+  if (open) {
+    selectStop(null)
+    select(null)
+    renderInfo()
+    cardEl.hidden = false
+    announce('About and privacy')
+  } else if (!selected && !stopSel) {
+    cardEl.hidden = true
+  }
+}
+infoBtn.addEventListener('click', () => setInfo(!infoOpen))
+
+const cityNames = CITIES.map((c) => c.name)
+const cityList = `${cityNames.slice(0, -1).join(', ')} and ${cityNames[cityNames.length - 1]}`
+
+/** Keep in sync with what the app actually stores and sends (store.set, the feeds, /api). */
+function renderInfo(): void {
+  const saved = store.get('gps') != null || store.get('view') != null
+  const forget = saved
+    ? '<button type="button" class="forget" data-act="forget">Forget my location</button>'
+    : `<p class="note">${forgotten ? 'Your location and map view were deleted from this browser.' : 'No location is saved in this browser.'}</p>`
+  setCard(`
+    <div class="ch">
+      <span class="badge ${modeClass(null)}" aria-hidden="true">i</span>
+      <div class="dest"><b>About &amp; privacy</b><small>Live vehicles in ${escapeHtml(cityList)}</small></div>
+      <button type="button" class="ib" data-act="close" aria-label="Close">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="info">
+      <p>No cookies, no ads, no analytics.</p>
+      <p><b>Saved only in this browser</b>, never sent anywhere: your last location (rounded to about
+        100 m, and only after you tap the location button), the last map view, and which vehicle
+        types are shown.</p>
+      <p><b>Sent to show the map:</b> the area you're looking at goes to the live-data servers of HSL
+        and Digitransit, and map tiles, stops and departures load through this site's server. Like
+        any website, they see your IP address.</p>
+      ${forget}
+    </div>`)
+}
+
+/** Delete the saved location and view, and stop using GPS until the location button is tapped again. */
+function forgetLocation(): void {
+  pauseGps()
+  gpsOn = false
+  gps = null
+  meDot?.remove()
+  meAcc?.remove()
+  meDot = meAcc = null
+  followMe = false
+  locateBtn.classList.remove('on')
+  store.remove('gps')
+  store.remove('view')
+  savedView = ''
+  forgotten = true
+  renderInfo()
+  announce('Location forgotten')
+}
 
 // ---------------------------------------------------------------- stop departures board
 
@@ -534,6 +615,7 @@ function parseStopParam(p: string): Pick<StopRef, 'city' | 'id'> | null {
 function selectStop(s: StopRef | null): void {
   if (s && stopSel && stopKey(stopSel) === stopKey(s)) return
   if (s) select(null)
+  if (s) setInfo(false)
   stopSel = s
   board = null
   boardNote = ''

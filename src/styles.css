@@ -435,6 +435,31 @@ svg {
   color: var(--muted);
 }
 
+/* ---------- about & privacy panel (the (i) button) ---------- */
+.info {
+  font-size: 14px;
+  line-height: 1.45;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.info p {
+  margin: 10px 0 0;
+}
+.forget {
+  margin-top: 12px;
+  border: 1.5px solid #cfd6dd;
+  border-radius: 18px;
+  padding: 7px 14px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+}
+.forget:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
+}
+
 /* ---------- vehicle markers ---------- */
 /* Drawn by src/vehicle-canvas.ts. Taps are hit-tested there, so they pass through here. */
 .veh-canvas {
