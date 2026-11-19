@@ -75,10 +75,25 @@ if (openedLinkCity) start = [...linkCity.center, 13]
 /** Below this zoom the map is an overview of the cities (tiles cover all of Finland; see api/tile.ts). */
 const MAP_MIN_ZOOM = 5
 
-const map = L.map(mapEl, { zoomControl: false, minZoom: MAP_MIN_ZOOM, maxZoom: 18 }).setView(
-  [start[0], start[1]],
-  start[2],
-)
+/**
+ * A first visit with nothing to go on (no saved position, no link to a city, stop or line)
+ * opens on all the cities, so it's clear at once that the app covers several. After that
+ * the saved position or view opens in the right city.
+ */
+const linkParams = new URL(location.href).searchParams
+const firstVisit = !lastGps && !lastView && !linkCity && !linkParams.has('stop') && !linkParams.has('line')
+
+const map = L.map(mapEl, { zoomControl: false, minZoom: MAP_MIN_ZOOM, maxZoom: 18 })
+if (firstVisit) {
+  // Keep the city markers clear of the search bar and type chips (top) and the locate button.
+  map.fitBounds(L.latLngBounds(CITIES.map((c) => c.center)), {
+    paddingTopLeft: [50, 150],
+    paddingBottomRight: [50, 100],
+    maxZoom: 8,
+  })
+} else {
+  map.setView([start[0], start[1]], start[2])
+}
 map.attributionControl.setPrefix(false)
 // Required by the Digitransit terms (CC BY 4.0): credit Digitransit plus the year. See docs/API-TERMS.md.
 map.attributionControl.addAttribution(
@@ -225,7 +240,7 @@ function updateTopics(): void {
       if (box) topics.add(city, ...feedOf(city).area(city, box, 160, onlyMoved, modes))
     }
   } else {
-    hint = 'Zoom in to see vehicles'
+    hint = 'Tap a city, or zoom in to see vehicles'
   }
   const sel = selected ? vehicles.get(selected) : undefined
   const selCity = sel && cityById(sel.city)
@@ -260,6 +275,8 @@ function setParam(k: string, v: string | null): void {
  * open in the right city, and searches move to it ("5" now means Tampere's line 5).
  */
 function followCity(): void {
+  // Zoomed out over several cities, the one at the centre isn't "the city on screen".
+  if (map.getZoom() < AREA_MIN_ZOOM) return
   const c = map.getCenter()
   const city = cityAt(c.lat, c.lng)
   if (!city) return // between cities: keep the last one
