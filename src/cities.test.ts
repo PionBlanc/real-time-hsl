@@ -22,6 +22,8 @@ describe('cities', () => {
   it('finds the city at a point', () => {
     expect(cityAt(60.17, 24.94)?.id).toBe('hsl')
     expect(cityAt(61.5, 23.76)?.id).toBe('tampere')
+    expect(cityAt(60.45, 22.27)?.id).toBe('turku')
+    expect(cityAt(62.24, 25.75)?.id).toBe('jyvaskyla')
     expect(cityAt(65.01, 25.47)).toBeNull() // Oulu: not in the app yet
   })
   it('strips only its own feed prefix', () => {

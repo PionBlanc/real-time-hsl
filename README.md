@@ -18,7 +18,8 @@ moving in real time.
   find that vehicle anywhere. Operators can share numbers, so there may be more than one.
   Combine with lines: `551 #1234`.
 - **Type chips** under the search bar: tap Bus / Tram / … to hide or show that type.
-- **Cities**: Helsinki (HSL) and Tampere (Nysse) work the same way. Zoom out to see a marker
+- **Cities**: Helsinki (HSL), Tampere (Nysse), Turku (Föli) and Jyväskylä (Linkki) work the
+  same way, as far as each city's data goes (e.g. only HSL sends delays and door status). Zoom out to see a marker
   per city; tap one to go there. Searches and stop links follow the city on screen, which is
   kept in the URL (`/?city=tampere&line=3`, `/?stop=tampere:3598`; HSL links have no city).
 - **Crosshair**: show your location. The location permission is only requested when you tap

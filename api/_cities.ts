@@ -5,7 +5,7 @@
 // https://digitransit.fi/en/developers/apis/5-realtime-api/vehicle-positions/digitransit-mqtt/),
 // check its id shapes against real data, and add it to the tests in src/cities.test.ts.
 
-export type CityId = 'hsl' | 'tampere'
+export type CityId = 'hsl' | 'tampere' | 'turku' | 'jyvaskyla'
 
 /** A lat/lng box (WGS84 degrees). */
 export interface Area {
@@ -70,6 +70,40 @@ export const CITIES: ReadonlyArray<City> = [
       stop: /^[0-9A-Za-z_]{1,16}$/,
       route: /^[0-9A-Za-z_]{1,16}$/,
       trip: /^[0-9A-Za-z_.-]{1,64}$/,
+    },
+  },
+  {
+    id: 'turku',
+    name: 'Turku',
+    feedId: 'FOLI',
+    router: 'waltti',
+    live: 'gtfsrt',
+    // Föli region (Turku, Kaarina, Raisio, Naantali, Lieto, Rusko).
+    area: { south: 60.25, west: 21.6, north: 60.7, east: 22.7 },
+    center: [60.4518, 22.2666],
+    ids: {
+      // Live data 2026-11: stops "178", routes "220", trips "00015642__1220040100".
+      // Föli's topics have no headsign; the trip lookup supplies it.
+      stop: /^[0-9A-Za-z_]{1,16}$/,
+      route: /^[0-9A-Za-z_]{1,16}$/,
+      trip: /^[0-9A-Za-z_.-]{1,64}$/,
+    },
+  },
+  {
+    id: 'jyvaskyla',
+    name: 'Jyväskylä',
+    feedId: 'LINKKI',
+    router: 'waltti',
+    live: 'gtfsrt',
+    // Linkki region (Jyväskylä, Muurame, Laukaa, Korpilahti, Tikkakoski).
+    area: { south: 61.95, west: 25.2, north: 62.6, east: 26.2 },
+    center: [62.2415, 25.7482],
+    ids: {
+      // Live data 2026-11: stops "309822", routes "9121" (shown as "12"),
+      // trips "M-P_koulp_talvi_2024-2025_9121_1_094000_101900_0".
+      stop: /^[0-9A-Za-z_]{1,16}$/,
+      route: /^[0-9A-Za-z_]{1,16}$/,
+      trip: /^[0-9A-Za-z_.-]{1,80}$/,
     },
   },
 ]

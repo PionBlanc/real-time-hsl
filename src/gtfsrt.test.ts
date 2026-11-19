@@ -15,10 +15,18 @@ const TAMPERE = {
     '0a0d0a03312e30100118f6e2fad706128a010a08363835325f383130227e0a330a123133375f32323335375f3137383439313330120831303a32333a30301a08323032363131313920002a053536383532300012140dcdca754215ccadbe411d00009c432dabaaaa3d1801200028f4e2fad70630003a0433353938421f0a08363835325f383130120a4b65736b7573746f72691a07594b562d343836',
   ),
 }
-// Turku (Föli): not a city in the app yet, but the same format.
+const FOLI_TOPIC = '/gtfsrt/vp/FOLI///BUS/220/0//00015642__1220040100/2055/09:30/221323/60;22/51/05/20/220/eaab00/'
 const FOLI = hex(
   '0a0d0a03312e3010011884e3fad706125a0a013122550a310a1430303031353634325f5f31323230303430313030120830393a33303a30301a0832303236313131392a033232303000120a0d52027242159934b1412880e3fad7063a043230353542080a06323231333233',
 )
+
+const LINKKI = {
+  topic:
+    '/gtfsrt/vp/LINKKI///BUS/9121/1/KANGASLAMPI/M-P_koulp_talvi_2024-2025_9121_1_094000_101900_0/309822/09:40/6714_457/62;25/28/72/35/12/00662B/',
+  payload: hex(
+    '0a0d0a03312e3010011887e3fad70612ab010a08363731345f343537229e010a500a304d2d505f6b6f756c705f74616c76695f323032342d323032355f393132315f315f3039343030305f3130313930305f30120830393a34303a30301a08323032363131313920002a0439313231300112140d9118794215a299ce411d008099432d721c1341182220022887e3fad70630003a0633303938323242200a08363731345f343537120b4b414e4741534c414d50491a074952562d383537',
+  ),
+}
 
 describe('decodeVehiclePosition', () => {
   it('reads a Tampere message', () => {
@@ -67,9 +75,37 @@ describe('parseMessage', () => {
     expect(m.hdg).toBe(312)
     expect(m.tst).toMatch(/^2026-11-19T/)
   })
+  it('reads Turku (Föli), which sends no headsign, bearing or speed', () => {
+    const m = parseMessage(FOLI_TOPIC, FOLI)!
+    expect(m).toMatchObject({
+      city: 'turku',
+      id: 'turku/221323',
+      veh: '221323',
+      route: '220',
+      headsign: '',
+      tripId: '00015642__1220040100',
+      nextStop: '2055',
+      desi: '220',
+      hdg: null,
+      spd: null,
+    })
+  })
+  it('reads Jyväskylä (Linkki), whose route ids differ from the line shown', () => {
+    const m = parseMessage(LINKKI.topic, LINKKI.payload)!
+    expect(m).toMatchObject({
+      city: 'jyvaskyla',
+      id: 'jyvaskyla/6714_457',
+      veh: '457',
+      route: '9121',
+      desi: '12',
+      dir: '2',
+      headsign: 'KANGASLAMPI',
+      tripId: 'M-P_koulp_talvi_2024-2025_9121_1_094000_101900_0',
+    })
+    expect(m.lat).toBeCloseTo(62.27, 2)
+  })
   it('ignores feeds of cities the app does not cover', () => {
-    const topic = '/gtfsrt/vp/FOLI///BUS/220/0//00015642__1220040100/2055/09:30/221323/60;22/51/05/20/220/eaab00/'
-    expect(parseMessage(topic, FOLI)).toBeNull()
+    expect(parseMessage(FOLI_TOPIC.replace('/FOLI/', '/OULU/'), FOLI)).toBeNull()
   })
   it('ignores unknown modes and other topics', () => {
     expect(parseMessage(TAMPERE.topic.replace('/BUS/', '/CABLE_CAR/'), TAMPERE.payload)).toBeNull()
