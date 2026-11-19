@@ -65,6 +65,10 @@ svg {
   border-radius: 23px;
   box-shadow: var(--shadow);
 }
+/* #q has no outline of its own: ring the whole pill instead. */
+#search:focus-within {
+  box-shadow: var(--shadow), 0 0 0 2px var(--blue);
+}
 #q {
   flex: 1;
   min-width: 0;
@@ -77,7 +81,7 @@ svg {
 }
 #q::placeholder {
   text-transform: none;
-  color: #8a94a0;
+  color: #6b7682; /* 4.6:1 */
 }
 .ib {
   border: 0;
@@ -161,9 +165,9 @@ svg {
 }
 #modes [data-mode='bus'] { --c: #007ac9; }
 #modes [data-mode='tram'] { --c: #00985f; }
-#modes [data-mode='metro'] { --c: #ff6319; }
+#modes [data-mode='metro'] { --c: #d34400; }
 #modes [data-mode='train'] { --c: #8c4799; }
-#modes [data-mode='ferry'] { --c: #00b9e4; }
+#modes [data-mode='ferry'] { --c: #00819f; }
 #hint {
   background: rgba(27, 31, 36, 0.85);
   color: #fff;
@@ -234,6 +238,42 @@ svg {
 #info[aria-expanded='true'] {
   color: var(--ink);
 }
+/* Zoom +/− stacked above the locate button: an alternative to pinching and dragging. */
+#mapctl {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+#zoom {
+  display: flex;
+  flex-direction: column;
+  width: 44px;
+  border-radius: 22px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+#zoom button {
+  height: 44px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+}
+#zoom button + button {
+  border-top: 1px solid #e3e7eb;
+}
+#zoom button[aria-disabled='true'] {
+  color: #b5bdc5;
+  cursor: default;
+}
+#zoom button:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: -3px;
+  border-radius: 22px;
+}
 #locate {
   width: 52px;
   height: 52px;
@@ -295,8 +335,8 @@ svg {
   font-size: 13px;
 }
 .late { color: #c62828; font-weight: 600; }
-.early { color: #b26a00; font-weight: 600; }
-.ok { color: #2b8a3e; font-weight: 600; }
+.early { color: #9a5c00; font-weight: 600; }
+.ok { color: #25793a; font-weight: 600; }
 .stops {
   list-style: none;
   margin: 10px 0 0;
@@ -447,9 +487,13 @@ svg {
 .board li.on-map:hover,
 .board li.on-map:focus-visible {
   background: rgba(255, 255, 255, 0.08);
-  outline: 0;
   margin: 0 -10px;
   padding: 7px 10px;
+}
+.board li.on-map:focus-visible {
+  outline: 2px solid #8fd3ff;
+  outline-offset: -2px;
+  border-radius: 6px;
 }
 .note {
   margin: 8px 0 0;
@@ -525,10 +569,10 @@ svg {
 }
 
 /* Mode colours for card badges, as classes rather than style="" so the CSP can
-   forbid inline styles. Keep in sync with COLORS in src/hfp.ts. */
+   forbid inline styles. Keep in sync with COLORS in src/feed.ts. */
 .m-bus { background: #007ac9; }
 .m-tram { background: #00985f; }
-.m-metro { background: #ff6319; }
+.m-metro { background: #d34400; }
 .m-train { background: #8c4799; }
-.m-ferry { background: #00b9e4; }
+.m-ferry { background: #00819f; }
 .m-none { background: #5d6874; }

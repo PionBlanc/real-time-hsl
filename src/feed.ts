@@ -9,12 +9,16 @@ import type { Area, City, CityId, Mode } from '../api/_cities'
 export { MODES }
 export type { Mode }
 
+/**
+ * Mode colours, HSL's palette with metro and ferry darkened (from #FF6319 and #00B9E4) so
+ * white labels on them reach 4.5:1. Keep in sync with the .m-* and #modes rules in styles.css.
+ */
 export const COLORS: Record<Mode, string> = {
   bus: '#007AC9',
   tram: '#00985F',
-  metro: '#FF6319',
+  metro: '#D34400',
   train: '#8C4799',
-  ferry: '#00B9E4',
+  ferry: '#00819F',
 }
 
 export type Box = Area

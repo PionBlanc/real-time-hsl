@@ -280,7 +280,7 @@ function setParam(k: string, v: string | null): void {
   const u = new URL(location.href)
   if (v == null) u.searchParams.delete(k)
   else u.searchParams.set(k, v)
-  if (u.href !== location.href) history.replaceState(null, '', u)
+  if (u.href !== location.href) history.replaceState(history.state, '', u) // keep the card marker (see Back)
 }
 
 /**
@@ -365,9 +365,48 @@ function setCard(html: string): void {
   cardEl.innerHTML = html
   if (act) {
     const sel = `[data-act="${act}"]${id ? `[data-id="${CSS.escape(id)}"]` : ''}`
-    cardEl.querySelector<HTMLElement>(sel)?.focus({ preventScroll: true })
+    // The control is gone (e.g. a departure row opened its vehicle): keep focus in the card.
+    const el = cardEl.querySelector<HTMLElement>(sel) ?? cardEl.querySelector<HTMLElement>('[data-act="close"]')
+    el?.focus({ preventScroll: true })
   }
 }
+
+/**
+ * Back closes the card. Opening one adds a history entry (state {card: true}), so the phone's
+ * back button or swipe pops that instead of leaving the site; closing it any other way (×, Esc,
+ * tapping the map) goes back over the entry, so it doesn't pile up.
+ *
+ * Keyboard focus: opening moves it into the card, closing puts it back where it was.
+ *
+ * Watches the card's `hidden` attribute rather than hooking every open/close path. Mutation
+ * records arrive after the current task, so switching cards (stop → vehicle hides and shows the
+ * card in one go) is no change at all.
+ */
+const isCardEntry = (): boolean => (history.state as { card?: boolean } | null)?.card === true
+let cardWasOpen = false
+let cardOpener: HTMLElement | null = null
+new MutationObserver(() => {
+  const open = !cardEl.hidden
+  if (open === cardWasOpen) return
+  cardWasOpen = open
+  if (open) {
+    if (!isCardEntry()) history.pushState({ card: true }, '', location.href)
+    const f = document.activeElement as HTMLElement | null
+    cardOpener = f && f !== document.body && !cardEl.contains(f) ? f : null
+    // Only for keyboard users: after a tap on the map, focus is on the map, not a control.
+    if (cardOpener && cardOpener !== mapEl) cardEl.querySelector<HTMLElement>('[data-act="close"]')?.focus({ preventScroll: true })
+  } else {
+    if (isCardEntry()) history.back()
+    const f = document.activeElement
+    if (cardOpener?.isConnected && (!f || f === document.body || cardEl.contains(f))) {
+      cardOpener.focus({ preventScroll: true })
+    }
+    cardOpener = null
+  }
+}).observe(cardEl, { attributes: true, attributeFilter: ['hidden'] })
+addEventListener('popstate', () => {
+  if (!isCardEntry() && !cardEl.hidden) closeAll()
+})
 
 /** Tell screen-reader users what just opened (once, not on every refresh). */
 let srTimer: ReturnType<typeof setTimeout> | undefined
@@ -923,6 +962,18 @@ function onPosError(e: GeolocationPositionError): void {
   }
 }
 
+const zoomIn = $<HTMLButtonElement>('zoom-in')
+const zoomOut = $<HTMLButtonElement>('zoom-out')
+zoomIn.addEventListener('click', () => map.zoomIn())
+zoomOut.addEventListener('click', () => map.zoomOut())
+/** aria-disabled, not disabled: a disabled button drops keyboard focus at the zoom limit. */
+function updateZoomButtons(): void {
+  zoomIn.setAttribute('aria-disabled', String(map.getZoom() >= map.getMaxZoom()))
+  zoomOut.setAttribute('aria-disabled', String(map.getZoom() <= map.getMinZoom()))
+}
+map.on('zoomend', updateZoomButtons)
+updateZoomButtons()
+
 locateBtn.addEventListener('click', () => {
   if (gps) {
     followMe = true
@@ -964,7 +1015,7 @@ function applyQuery(): void {
   const u = new URL(location.href)
   if (next.length) u.searchParams.set('line', next.join(','))
   else u.searchParams.delete('line')
-  history.replaceState(null, '', u)
+  history.replaceState(history.state, '', u)
   vehicles.refilter()
   updateTopics()
   startSearch()
