@@ -465,12 +465,15 @@ function renderCard(m: Msg): void {
     .join(' · ')
 
   let stops = ''
+  // Without a live delay (GTFS-RT feeds have none) the times below are only the timetable.
+  let scheduled = false
   if (trip) {
     if (m.nextStop === 'EOL') {
       stops = '<li><span>Reached the end of the line</span></li>'
     } else {
       const k = trip.stops.findIndex((s) => s.id === m.nextStop)
       if (k >= 0) {
+        scheduled = m.dl == null
         const now = nowServiceSeconds(m.oday)
         stops = trip.stops
           .slice(k, k + 3)
@@ -494,6 +497,7 @@ function renderCard(m: Msg): void {
       </button>
     </div>
     ${stops ? `<ol class="stops">${stops}</ol>` : ''}
+    ${scheduled ? '<p class="note">Scheduled times (no live delay data)</p>' : ''}
     ${tripNote ? `<p class="note">${escapeHtml(tripNote)}</p>` : ''}`)
 }
 
