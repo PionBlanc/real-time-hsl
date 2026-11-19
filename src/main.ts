@@ -569,6 +569,12 @@ function renderInfo(): void {
     </div>`)
 }
 
+/**
+ * Set by "Forget my location": don't start GPS by itself on later visits, until the location
+ * button is tapped again. A plain flag, no location in it.
+ */
+const GPS_OFF = 'gpsOff'
+
 /** Delete the saved location and view, and stop using GPS until the location button is tapped again. */
 function forgetLocation(): void {
   pauseGps()
@@ -581,6 +587,8 @@ function forgetLocation(): void {
   locateBtn.classList.remove('on')
   store.remove('gps')
   store.remove('view')
+  // Without this, the next visit would turn GPS straight back on (the permission is still granted).
+  store.set(GPS_OFF, true)
   savedView = ''
   forgotten = true
   renderInfo()
@@ -881,7 +889,8 @@ async function autoStartGps(): Promise<void> {
     /* unsupported: decide on lastGps alone */
   }
   if (state === 'denied') locateBtn.classList.add('denied')
-  else if (state === 'granted' || lastGps) startGps()
+  // Not after "Forget my location": the browser keeps its permission, but the user said no.
+  else if (!store.get(GPS_OFF) && (state === 'granted' || lastGps)) startGps()
 }
 
 function onPos(p: GeolocationPosition): void {
@@ -924,6 +933,7 @@ locateBtn.addEventListener('click', () => {
     toast('Location is blocked – allow it in your browser settings')
   } else {
     userMoved = false
+    store.remove(GPS_OFF) // asked for again: auto-start on later visits too
     toast('Finding your location…')
     startGps()
   }
