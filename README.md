@@ -19,7 +19,9 @@ moving in real time.
   Combine with lines: `551 #1234`.
 - **Type chips** under the search bar: tap Bus / Tram / … to hide or show that type.
 - **Cities**: Helsinki (HSL), Tampere (Nysse), Turku (Föli) and Jyväskylä (Linkki) work the
-  same way, as far as each city's data goes (e.g. only HSL sends delays and door status). Zoom out to see a marker
+  same way, as far as each city's data goes: only HSL sends delays and door status, Turku's feed has
+  no vehicle numbers, and the type chips only show the city's own modes. Anything a feed lacks is
+  left out, never guessed (see `api/_cities.ts`). Zoom out to see a marker
   per city; tap one to go there. Searches and stop links follow the city on screen, which is
   kept in the URL (`/?city=tampere&line=3`, `/?stop=tampere:3598`).
 - **Privacy** (bottom left): what the app stores (only in your browser) and sends, and a

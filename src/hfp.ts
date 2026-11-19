@@ -88,7 +88,7 @@ export function parseMessage(topic: string, payload: Uint8Array): Msg | null {
     id: `${p[7]}/${p[8]}`,
     mode,
     oper: p[7],
-    veh: p[8], // zero-padded, as in the topic
+    veh: CITY.sideNumber?.exec(`${p[7]}/${p[8]}`)?.[1] ?? null, // zero-padded, as in the topic
     route: p[9] || vp.route || '',
     dir: p[10] || vp.dir || '1',
     headsign: p[11] || null,

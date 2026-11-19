@@ -229,7 +229,7 @@ class Topics {
 function updateTopics(): void {
   const topics = new Topics()
   const sc = searchCity
-  for (const n of vehNums) topics.add(sc, feedOf(sc).vehicleNumber(sc, n))
+  if (sc.sideNumber) for (const n of vehNums) topics.add(sc, feedOf(sc).vehicleNumber(sc, n))
   const z = map.getZoom()
   let hint = ''
   // Without resolved route ids, line search falls back to filtering the visible area.
@@ -290,6 +290,7 @@ function followCity(): void {
   setParam('city', city.id)
   if (city === searchCity) return
   searchCity = city
+  renderModes()
   if (!terms.length) return
   lineRoutes = null
   vehicles.refilter()
@@ -958,8 +959,9 @@ function applyQuery(): void {
 }
 
 function startSearch(): void {
+  if (vehNums.length && !searchCity.sideNumber) toast(`Vehicle numbers aren’t available in ${searchCity.name}`)
   if (lines.length) resolveLines(lines)
-  else if (vehNums.length) {
+  else if (vehNums.length && searchCity.sideNumber) {
     const want = terms
     setTimeout(() => fitIfNoneVisible(want), 2500)
   }
@@ -1020,6 +1022,8 @@ const modesEl = $('modes')
 function renderModes(): void {
   modesEl.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => {
     const on = modes.has(b.dataset.mode as Mode)
+    // Only the modes the city on screen has: no Metro chip in Tampere.
+    b.hidden = !searchCity.modes.includes(b.dataset.mode as Mode)
     b.setAttribute('aria-pressed', String(on))
     b.title = `${on ? 'Hide' : 'Show'} ${b.textContent!.trim().toLowerCase()}s`
   })

@@ -3,10 +3,11 @@
  * feeds implementing `Feed` (src/hfp.ts for HSL, src/gtfsrt.ts for Digitransit's GTFS-RT
  * cities); the rest of the app only sees `Msg` and never needs to know which feed it came from.
  */
-import type { Area, City, CityId } from '../api/_cities'
+import { MODES } from '../api/_cities'
+import type { Area, City, CityId, Mode } from '../api/_cities'
 
-export type Mode = 'bus' | 'tram' | 'metro' | 'train' | 'ferry'
-export const MODES: Array<Mode> = ['bus', 'tram', 'metro', 'train', 'ferry']
+export { MODES }
+export type { Mode }
 
 export const COLORS: Record<Mode, string> = {
   bus: '#007AC9',

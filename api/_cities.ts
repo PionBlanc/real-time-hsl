@@ -3,9 +3,14 @@
 //
 // Adding a city: add an entry here (its feed must be on mqtt.digitransit.fi, see
 // https://digitransit.fi/en/developers/apis/5-realtime-api/vehicle-positions/digitransit-mqtt/),
-// check its id shapes against real data, and add it to the tests in src/cities.test.ts.
+// check its id shapes, modes and vehicle ids against real data, and add it to the tests in
+// src/cities.test.ts. Only claim what the data really has: leave a feature out (null) rather
+// than guess.
 
 export type CityId = 'hsl' | 'tampere' | 'turku' | 'jyvaskyla'
+
+export type Mode = 'bus' | 'tram' | 'metro' | 'train' | 'ferry'
+export const MODES: Array<Mode> = ['bus', 'tram', 'metro', 'train', 'ferry']
 
 /** A lat/lng box (WGS84 degrees). */
 export interface Area {
@@ -38,6 +43,14 @@ export interface City {
    * URL need one city, and for a point in several areas the smallest one wins (cityAt).
    */
   area: Area
+  /** Transport modes in this city's live feed (checked against live data). Only these get a chip. */
+  modes: ReadonlyArray<Mode>
+  /**
+   * The number painted on a vehicle (its side number), as group 1 of this pattern on the live
+   * feed's vehicle id. null when the ids aren't side numbers: vehicles then show no number,
+   * and "#123" searches say they aren't available.
+   */
+  sideNumber: RegExp | null
   /** Where the zoomed-out city marker sits and where tapping it goes. */
   center: [number, number]
   /**
@@ -55,6 +68,9 @@ export const CITIES: ReadonlyArray<City> = [
     feedId: 'HSL',
     router: 'hsl',
     live: 'hfp',
+    modes: MODES,
+    // HFP vehicle ids are "<operator>/<vehicle number>"; the number is the one on the side.
+    sideNumber: /^\d+\/(\d{1,5})$/,
     area: { south: 59.5, west: 23.0, north: 61.0, east: 27.0 },
     center: [60.1699, 24.9384],
     ids: {
@@ -73,6 +89,10 @@ export const CITIES: ReadonlyArray<City> = [
     feedId: 'tampere',
     router: 'waltti',
     live: 'gtfsrt',
+    modes: ['bus', 'tram'],
+    // Vehicle ids "6921_12": operator, then vehicle number (label is the destination).
+    // TODO: not yet checked against the numbers painted on Nysse vehicles.
+    sideNumber: /^\d+_(\d{1,4})$/,
     // Nysse region (Tampere, Nokia, Ylöjärvi, Kangasala, Lempäälä, Pirkkala, Orivesi, Vesilahti).
     area: { south: 61.2, west: 23.2, north: 61.95, east: 24.5 },
     center: [61.4978, 23.761],
@@ -90,6 +110,9 @@ export const CITIES: ReadonlyArray<City> = [
     feedId: 'FOLI',
     router: 'waltti',
     live: 'gtfsrt',
+    modes: ['bus'], // the Föri ferry isn't in the live feed (checked 2026-11)
+    // Vehicle ids "202084", "80010", no label: not side numbers as far as we know.
+    sideNumber: null,
     // Föli region (Turku, Kaarina, Raisio, Naantali, Lieto, Rusko).
     area: { south: 60.25, west: 21.6, north: 60.7, east: 22.7 },
     center: [60.4518, 22.2666],
@@ -108,6 +131,10 @@ export const CITIES: ReadonlyArray<City> = [
     feedId: 'LINKKI',
     router: 'waltti',
     live: 'gtfsrt',
+    modes: ['bus'],
+    // Vehicle ids "6714_460": operator, then vehicle number (label is the destination).
+    // TODO: not yet checked against the numbers painted on Linkki buses.
+    sideNumber: /^\d+_(\d{1,4})$/,
     // Linkki region (Jyväskylä, Muurame, Laukaa, Korpilahti, Tikkakoski).
     area: { south: 61.95, west: 25.2, north: 62.6, east: 26.2 },
     center: [62.2415, 25.7482],

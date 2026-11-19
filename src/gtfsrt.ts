@@ -147,8 +147,6 @@ export function guessOday(start: string, now: Date): string {
   return helsinkiDate(ahead > 6 * 3600 ? new Date(now.getTime() - 86_400_000) : now)
 }
 
-/** The side number in a vehicle id: "6852_810" → "810", "80019" → "80019", else "". */
-const sideNumber = (vehicleId: string): string | null => /(?:^|_)(\d{1,6})$/.exec(vehicleId)?.[1] ?? null
 
 export function parseMessage(topic: string, payload: Uint8Array): Msg | null {
   const p = topic.split('/')
@@ -167,7 +165,7 @@ export function parseMessage(topic: string, payload: Uint8Array): Msg | null {
     id: `${city.id}/${vehicleId}`,
     mode,
     oper: null,
-    veh: sideNumber(vehicleId),
+    veh: city.sideNumber?.exec(vehicleId)?.[1] ?? null,
     route: p[7],
     dir: p[8] === '1' ? '2' : '1', // GTFS 0/1 -> HFP 1/2
     headsign: p[9] || null,

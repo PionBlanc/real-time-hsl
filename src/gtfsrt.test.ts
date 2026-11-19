@@ -80,7 +80,7 @@ describe('parseMessage', () => {
     expect(m).toMatchObject({
       city: 'turku',
       id: 'turku/221323',
-      veh: '221323',
+      veh: null, // Föli's vehicle ids aren't side numbers
       route: '220',
       headsign: null,
       tripId: '00015642__1220040100',
