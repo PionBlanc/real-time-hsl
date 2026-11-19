@@ -156,11 +156,17 @@ let tripNote = ''
 const canvas = L.canvas({ tolerance: 10 })
 const tripLine = new TripLine(map, canvas, (s) => selectStop(s))
 const stopsLayer = new StopsLayer(map, canvas, (s) => selectStop(s))
-stopsLayer.modes = modes
+/**
+ * Whether vehicles and stops of this mode show in this city. A city with a single mode has no
+ * chips (nothing to choose), so its vehicles always show, even if that mode is hidden elsewhere.
+ */
+const showsMode = (city: City | null, mode: Mode): boolean => (city?.modes.length ?? 0) < 2 || modes.has(mode)
+const shownModes = (city: City): ReadonlySet<Mode> => (city.modes.length < 2 ? new Set(city.modes) : modes)
+stopsLayer.showMode = (c, mode) => showsMode(cityById(c), mode)
 const vehicles = new Vehicles(map, canvas, (id) => select(id), onSelectedUpdate)
 const isSearchedVehicle = (m: Msg) => m.city === searchCity.id && m.veh != null && vehNums.includes(+m.veh)
 vehicles.filter = (m) =>
-  modes.has(m.mode) &&
+  showsMode(cityById(m.city), m.mode) &&
   (terms.length === 0 ||
     (m.city === searchCity.id && !!m.desi && lines.includes(m.desi.toUpperCase())) ||
     isSearchedVehicle(m))
@@ -244,7 +250,7 @@ function updateTopics(): void {
     const onlyMoved = z < COMPACT_BELOW_ZOOM
     for (const city of CITIES) {
       const box = intersect(view, city.area) // nothing between cities
-      if (box) topics.add(city, ...feedOf(city).area(city, box, 160, onlyMoved, modes))
+      if (box) topics.add(city, ...feedOf(city).area(city, box, 160, onlyMoved, shownModes(city)))
     }
   } else {
     hint = 'Tap a city, or zoom in to see vehicles'
@@ -466,15 +472,12 @@ function renderCard(m: Msg): void {
     .join(' · ')
 
   let stops = ''
-  // Without a live delay (GTFS-RT feeds have none) the times below are only the timetable.
-  let scheduled = false
   if (trip) {
     if (m.nextStop === 'EOL') {
       stops = '<li><span>Reached the end of the line</span></li>'
     } else {
       const k = trip.stops.findIndex((s) => s.id === m.nextStop)
       if (k >= 0) {
-        scheduled = m.dl == null
         const now = nowServiceSeconds(m.oday)
         stops = trip.stops
           .slice(k, k + 3)
@@ -498,7 +501,6 @@ function renderCard(m: Msg): void {
       </button>
     </div>
     ${stops ? `<ol class="stops">${stops}</ol>` : ''}
-    ${scheduled ? '<p class="note">Scheduled times (no live delay data)</p>' : ''}
     ${tripNote ? `<p class="note">${escapeHtml(tripNote)}</p>` : ''}`)
 }
 
@@ -1027,6 +1029,8 @@ function renderModes(): void {
     b.setAttribute('aria-pressed', String(on))
     b.title = `${on ? 'Hide' : 'Show'} ${b.textContent!.trim().toLowerCase()}s`
   })
+  // A single chip is no choice: hide the row (see showsMode).
+  modesEl.hidden = searchCity.modes.length < 2
 }
 modesEl.addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-mode]')
@@ -1039,7 +1043,6 @@ modesEl.addEventListener('click', (e) => {
   renderModes()
   vehicles.refilter()
   updateTopics() // hiding buses also stops downloading them
-  stopsLayer.modes = modes
   stopsLayer.refilter()
 })
 

@@ -1,5 +1,6 @@
 import L from 'leaflet'
 import { CITIES, overlaps } from '../api/_cities'
+import type { CityId } from '../api/_cities'
 import { CELL_LAT, CELL_LON, fetchStopCell } from './api'
 import type { StopRef } from './api'
 import { COLORS } from './feed'
@@ -18,8 +19,8 @@ export class StopsLayer {
   private markers = new Map<string, L.CircleMarker>()
   private stops = new Map<string, StopRef>()
   private highlight: L.CircleMarker | null = null
-  /** Which stop modes to show (stops without a known mode are always shown). */
-  modes: Set<Mode> = new Set()
+  /** Whether to show stops of this mode in this city (stops without a known mode are always shown). */
+  showMode: (city: CityId, mode: Mode) => boolean = () => true
 
   constructor(
     private map: L.Map,
@@ -76,10 +77,10 @@ export class StopsLayer {
   }
 
   private visible(s: StopRef): boolean {
-    return !s.mode || this.modes.has(s.mode)
+    return !s.mode || this.showMode(s.city, s.mode)
   }
 
-  /** Re-apply `modes`. */
+  /** Re-apply `showMode`. */
   refilter(): void {
     for (const [id, m] of this.markers) {
       const show = this.visible(this.stops.get(id)!)
