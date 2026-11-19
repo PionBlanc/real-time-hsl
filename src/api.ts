@@ -1,4 +1,3 @@
-import { DEFAULT_CITY } from '../api/_cities'
 import type { City, CityId } from '../api/_cities'
 import type { Mode, Msg } from './feed'
 import { helsinkiDate, tripStartSeconds } from './time'
@@ -38,11 +37,8 @@ export interface Trip {
 
 export class MissingKeyError extends Error {}
 
-/** The first query param for a city: none for HSL, so its URLs stay as they always were. */
-const cityQs = (city: City | CityId): string => {
-  const id = typeof city === 'string' ? city : city.id
-  return id === DEFAULT_CITY.id ? '' : `city=${id}&`
-}
+/** The first query param of every /api request. */
+const cityQs = (city: City | CityId): string => `city=${typeof city === 'string' ? city : city.id}&`
 
 /** Identifies the trip a vehicle is running (for caching and spotting trip changes). */
 export const tripKey = (m: Msg): string =>
@@ -203,8 +199,7 @@ export async function fetchStopBoard(
   if (r.status === 404) return null
   if (!r.ok) throw new Error(`stop ${r.status}`)
   const d = await r.json()
-  // Older deployments don't send the trip id (index 11).
-  type Row = [string, string, string, number, number, number, number, number, string, number, number, string?]
+  type Row = [string, string, string, number, number, number, number, number, string, number, number, string]
   return {
     stop: { city, id, name: d.n, code: d.c, lat: d.la, lng: d.lo, mode: gtfsMode(d.m) },
     platform: d.p,
@@ -217,7 +212,7 @@ export async function fetchStopBoard(
       clockSec: x[5],
       realtime: x[6] === 1,
       canceled: x[7] === 1,
-      tripId: x[11] ?? '',
+      tripId: x[11],
       route: x[8],
       dir: String(x[9]),
       // Service day starts at local midnight (noon - 12 h), so +12 h lands safely mid-day.

@@ -278,7 +278,7 @@ function setParam(k: string, v: string | null): void {
 }
 
 /**
- * Keep track of the city on screen: it goes in the URL (?city=tampere, none for HSL), so links
+ * Keep track of the city on screen: it goes in the URL (?city=tampere), so links
  * open in the right city, and searches move to it ("5" now means Tampere's line 5).
  */
 function followCity(): void {
@@ -287,7 +287,7 @@ function followCity(): void {
   const c = map.getCenter()
   const city = cityAt(c.lat, c.lng)
   if (!city) return // between cities: keep the last one
-  setParam('city', city === DEFAULT_CITY ? null : city.id)
+  setParam('city', city.id)
   if (city === searchCity) return
   searchCity = city
   if (!terms.length) return
@@ -595,15 +595,12 @@ let boardMore = true // more departures may exist after the loaded ones
 let loadingMore = false
 let moreFailed = false
 
-/** A stop as written in the URL: "1130446" for HSL (as always), "tampere:3598" elsewhere. */
-const stopParamOf = (s: StopRef): string => (s.city === DEFAULT_CITY.id ? s.id : stopKey(s))
-
-/** The ?stop= param back to a stop, or null if it isn't a valid stop id (same checks as api/stop.ts). */
+/** The ?stop= param ("hsl:1130446", "tampere:3598"; see stopKey) back to a stop, or null if invalid (same checks as api/stop.ts). */
 function parseStopParam(p: string): Pick<StopRef, 'city' | 'id'> | null {
   const i = p.indexOf(':')
-  const city = i < 0 ? DEFAULT_CITY : cityById(p.slice(0, i))
+  const city = cityById(p.slice(0, i))
   const id = p.slice(i + 1)
-  if (!city || (i >= 0 && city === DEFAULT_CITY) || !city.ids.stop.test(id)) return null
+  if (i < 0 || !city || !city.ids.stop.test(id)) return null
   return { city: city.id, id }
 }
 
@@ -621,7 +618,7 @@ function selectStop(s: StopRef | null): void {
   moreFailed = false
   clearInterval(boardTimer)
   stopsLayer.setSelected(s && Number.isFinite(s.lat) ? s : null)
-  setParam('stop', s ? stopParamOf(s) : null)
+  setParam('stop', s ? stopKey(s) : null)
   const card = $('card')
   if (!s) {
     if (!selected) card.hidden = true
@@ -1096,7 +1093,7 @@ if (__HAS_KEY__) stopsLayer.update()
 void autoStartGps()
 startSearch()
 
-// ?stop=1130446 (HSL) or ?stop=tampere:3598 opens that stop's board (a shareable "my stop" link).
+// ?stop=hsl:1130446 or ?stop=tampere:3598 opens that stop's board (a shareable "my stop" link).
 const linkStop = parseStopParam(new URL(location.href).searchParams.get('stop') ?? '')
 if (__HAS_KEY__ && linkStop) {
   userMoved = true // don't jump to GPS

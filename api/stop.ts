@@ -1,4 +1,4 @@
-// GET /api/stop?[city=tampere&]id=1130446[&start=<unix s, whole minute>]
+// GET /api/stop?city=hsl&id=1130446[&start=<unix s, whole minute>]
 // Next departures from one stop, with realtime estimates where available ("bus-stop screen").
 // `start` pages further into the future (departures at or after that time).
 import { localId } from './_cities'

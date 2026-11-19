@@ -1,4 +1,4 @@
-// GET /api/routes?[city=tampere&]q=551  ->  [{ id: "2551", n: "551", m: "BUS" }]
+// GET /api/routes?city=hsl&q=551  ->  [{ id: "2551", n: "551", m: "BUS" }]
 // Maps a line number as shown to passengers to the city's route ids (as in its live feed).
 import { localId } from './_cities'
 import { apiKey, badRequest, cityParam, graphql, guard, json, noKey, upstreamError } from './_digitransit'

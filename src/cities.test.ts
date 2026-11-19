@@ -35,10 +35,10 @@ describe('cities', () => {
 })
 
 describe('cityParam', () => {
-  it('defaults to HSL and only accepts other known cities', () => {
-    expect(cityParam(qs('id=1'))?.id).toBe('hsl')
+  it('requires a known city', () => {
+    expect(cityParam(qs('city=hsl&id=1'))?.id).toBe('hsl')
     expect(cityParam(qs('city=tampere&id=1'))?.id).toBe('tampere')
-    expect(cityParam(qs('city=hsl&id=1'))).toBeNull() // non-canonical: HSL URLs have no city
+    expect(cityParam(qs('id=1'))).toBeNull()
     expect(cityParam(qs('city=oulu'))).toBeNull()
   })
 })
@@ -82,7 +82,7 @@ describe('/api/trip', () => {
   it('still matches HSL vehicles by route, direction, day and start', async () => {
     const f = upstream({ trip: null })
     const date = new Date().toISOString().slice(0, 10)
-    const res = await get(trip, `route=2551&dir=1&date=${date}&time=61200`)
+    const res = await get(trip, `city=hsl&route=2551&dir=1&date=${date}&time=61200`)
     expect(res.status).toBe(404)
     expect(f.mock.calls[0][0]).toBe('https://api.digitransit.fi/routing/v2/hsl/gtfs/v1')
     expect(body(f).variables).toMatchObject({ r: 'HSL:2551', d: 0, t: 61200 })
@@ -92,9 +92,9 @@ describe('/api/trip', () => {
     const date = new Date().toISOString().slice(0, 10)
     for (const q of [
       'city=tampere&route=5&dir=1&date=' + date + '&time=60', // HFP-style lookup for a GTFS-RT city
-      'trip=137_1', // trip id for HSL
+      'city=hsl&trip=137_1', // trip id for HSL
       'city=tampere&trip=a/b',
-      'city=hsl&route=2551&dir=1&date=' + date + '&time=60',
+      'route=2551&dir=1&date=' + date + '&time=60', // no city
     ])
       expect((await get(trip, q)).status, q).toBe(400)
     expect(f).not.toHaveBeenCalled()
@@ -120,10 +120,11 @@ describe('/api/stop', () => {
     expect(row[8]).toBe('5')
     expect(row[11]).toBe('137_22357_17849130')
   })
-  it('keeps HSL stop links working and checks ids per city', async () => {
+  it('checks ids per city', async () => {
     upstream({ stop: null })
-    expect((await get(stop, 'id=1130446')).status).toBe(404)
-    expect((await get(stop, 'id=3598')).status).toBe(400) // not an HSL stop id
+    expect((await get(stop, 'city=hsl&id=1130446')).status).toBe(404)
+    expect((await get(stop, 'city=hsl&id=3598')).status).toBe(400) // not an HSL stop id
+    expect((await get(stop, 'id=1130446')).status).toBe(400) // no city
     expect((await get(stop, 'city=tampere&id=a:b')).status).toBe(400)
   })
 })
@@ -139,8 +140,8 @@ describe('/api/stops', () => {
     // 61.45 / 0.02 = 3072, 23.85 / 0.04 = 596
     const res = await get(stops, 'city=tampere&la=3072&lo=596')
     expect(await res.json()).toEqual([['3598', 'Hervanta', '3598', 61.45, 23.85, 'BUS']])
-    expect((await get(stops, 'la=3072&lo=596')).status).toBe(400) // Tampere cell, asked as HSL
-    expect((await get(stops, 'la=3008&lo=623')).status).toBe(200) // Helsinki
+    expect((await get(stops, 'city=hsl&la=3072&lo=596')).status).toBe(400) // Tampere cell, asked as HSL
+    expect((await get(stops, 'city=hsl&la=3008&lo=623')).status).toBe(200) // Helsinki
   })
 })
 

@@ -1,6 +1,6 @@
 // Shared helpers for the Vercel edge functions. Files starting with "_" are not routes.
 // ".js": tile.ts runs on Node, whose ESM loader needs it (see api/tile.ts).
-import { DEFAULT_CITY, cityById } from './_cities.js'
+import { cityById } from './_cities.js'
 import type { City } from './_cities.js'
 
 const graphqlUrl = (city: City) => `https://api.digitransit.fi/routing/v2/${city.router}/gtfs/v1`
@@ -76,16 +76,11 @@ export function upstreamError(where: string, e: unknown): Response {
 }
 
 /**
- * The city a request is for: the `city` param, or HSL when there is none. Null for an unknown
- * city, and for an explicit "city=hsl" (the canonical HSL URL has no city param, which keeps
- * old clients' URLs working and gives each response a single cache key).
+ * The city a request is for (the required `city` param); null if missing or unknown.
  * Every endpoint lists "city" first in its guard() params.
  */
 export function cityParam(q: URLSearchParams): City | null {
-  const id = q.get('city')
-  if (id == null) return DEFAULT_CITY
-  const c = cityById(id)
-  return c && c !== DEFAULT_CITY ? c : null
+  return cityById(q.get('city'))
 }
 
 export async function graphql<T>(

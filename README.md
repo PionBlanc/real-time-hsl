@@ -11,7 +11,7 @@ moving in real time.
   route): a live departures board like the screens at stops. It shows the next
   departures with realtime estimates (pulsing dot) and refreshes every 20 s. Tap
   a departure marked with a pin to jump to that vehicle on the map. The stop is
-  kept in the URL (`/?stop=1130446`), so you can bookmark "your" stop.
+  kept in the URL (`/?stop=hsl:1130446`), so you can bookmark "your" stop.
 - **Type a line** (`551`, `15 9`, `M1`) to see that line's vehicles anywhere in
   the region. The filter is kept in the URL (`/?line=551`), so you can bookmark it.
 - **Type a vehicle number** (`#1234`, the *kylkinumero* on the side of the bus) to
@@ -21,7 +21,7 @@ moving in real time.
 - **Cities**: Helsinki (HSL), Tampere (Nysse), Turku (Föli) and Jyväskylä (Linkki) work the
   same way, as far as each city's data goes (e.g. only HSL sends delays and door status). Zoom out to see a marker
   per city; tap one to go there. Searches and stop links follow the city on screen, which is
-  kept in the URL (`/?city=tampere&line=3`, `/?stop=tampere:3598`; HSL links have no city).
+  kept in the URL (`/?city=tampere&line=3`, `/?stop=tampere:3598`).
 - **Privacy** (bottom left): what the app stores (only in your browser) and sends, and a
   "Forget my location" button. No cookies or analytics. Keep its text in sync if that changes.
 - **Crosshair**: show your location. The location permission is only requested when you tap

@@ -1,4 +1,4 @@
-// GET /api/trip?route=2551&dir=1&date=2026-11-17&time=61200   (HSL)
+// GET /api/trip?city=hsl&route=2551&dir=1&date=2026-11-17&time=61200   (HSL)
 // GET /api/trip?city=tampere&trip=137_22357_17849130           (GTFS-RT cities)
 // Resolves a live vehicle to its GTFS trip: path geometry + stops with scheduled times.
 // HFP has no trip id, so HSL vehicles are matched by route, direction, day and start time;

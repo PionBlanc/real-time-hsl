@@ -1,4 +1,4 @@
-// GET /api/stops?[city=tampere&]la=3008&lo=623
+// GET /api/stops?city=hsl&la=3008&lo=623
 // All stops in one fixed grid cell (CELL_LAT x CELL_LON degrees), so responses cache well.
 import { localId } from './_cities'
 import { apiKey, badRequest, canonicalInt, cityParam, graphql, guard, json, noKey, upstreamError } from './_digitransit'
