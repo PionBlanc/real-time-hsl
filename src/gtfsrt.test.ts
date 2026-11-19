@@ -82,12 +82,16 @@ describe('parseMessage', () => {
       id: 'turku/221323',
       veh: '221323',
       route: '220',
-      headsign: '',
+      headsign: null,
       tripId: '00015642__1220040100',
       nextStop: '2055',
       desi: '220',
       hdg: null,
       spd: null,
+      // Not in GTFS-RT: unknown, not "closed" or "on time".
+      doorsOpen: null,
+      dl: null,
+      oper: null,
     })
   })
   it('reads Jyväskylä (Linkki), whose route ids differ from the line shown', () => {

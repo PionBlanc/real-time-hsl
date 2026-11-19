@@ -148,7 +148,7 @@ export function guessOday(start: string, now: Date): string {
 }
 
 /** The side number in a vehicle id: "6852_810" → "810", "80019" → "80019", else "". */
-const sideNumber = (vehicleId: string): string => /(?:^|_)(\d{1,6})$/.exec(vehicleId)?.[1] ?? ''
+const sideNumber = (vehicleId: string): string | null => /(?:^|_)(\d{1,6})$/.exec(vehicleId)?.[1] ?? null
 
 export function parseMessage(topic: string, payload: Uint8Array): Msg | null {
   const p = topic.split('/')
@@ -166,21 +166,21 @@ export function parseMessage(topic: string, payload: Uint8Array): Msg | null {
     city: city.id,
     id: `${city.id}/${vehicleId}`,
     mode,
-    oper: '',
+    oper: null,
     veh: sideNumber(vehicleId),
     route: p[7],
     dir: p[8] === '1' ? '2' : '1', // GTFS 0/1 -> HFP 1/2
-    headsign: p[9],
+    headsign: p[9] || null,
     start,
     tripId: p[10],
     nextStop: p[11],
-    desi: p[18] ?? '',
+    desi: p[18] || null,
     lat: vp.lat,
     lng: vp.lng,
     hdg: vp.bearing,
     spd: vp.speed,
     dl: null,
-    doorsOpen: false,
+    doorsOpen: null,
     oday: isoDate(vp.startDate) || (start ? guessOday(start, new Date()) : ''),
     tst: tst.toISOString(),
   }

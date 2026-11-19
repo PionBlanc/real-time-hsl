@@ -119,7 +119,7 @@ export class Vehicles {
 
   private isSameLine(id: string, m: Msg): boolean {
     const sel = this.selected ? this.all.get(this.selected) : undefined
-    return !!sel && id !== this.selected && m.desi.toUpperCase() === sel.msg.desi.toUpperCase()
+    return !!sel && id !== this.selected && !!m.desi && m.desi.toUpperCase() === sel.msg.desi?.toUpperCase()
   }
 
   /** Give v the right kind of marker for the current mode, styled for its current state. */

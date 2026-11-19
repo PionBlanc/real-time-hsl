@@ -91,18 +91,18 @@ export function parseMessage(topic: string, payload: Uint8Array): Msg | null {
     veh: p[8], // zero-padded, as in the topic
     route: p[9] || vp.route || '',
     dir: p[10] || vp.dir || '1',
-    headsign: p[11] || '',
+    headsign: p[11] || null,
     // '' (= unknown, no route lookup) unless well-formed.
     start: /^\d{2}:\d{2}$/.test(start) ? start : '',
     tripId: '', // HFP has none: trips are found from route, direction, day and start time
     nextStop: p[13] || '',
-    desi: typeof vp.desi === 'string' ? vp.desi : '',
+    desi: typeof vp.desi === 'string' && vp.desi ? vp.desi : null,
     lat,
     lng,
     hdg: num(vp.hdg),
     spd: num(vp.spd),
     dl: num(vp.dl),
-    doorsOpen: vp.drst === 1,
+    doorsOpen: vp.drst === 0 || vp.drst === 1 ? vp.drst === 1 : null,
     oday: /^\d{4}-\d{2}-\d{2}$/.test(oday) ? oday : '',
     tst: vp.tst,
   }
@@ -149,6 +149,6 @@ export const hfp: Feed = {
     // Geohash levels 0–3: only updates after the vehicle moved ~100 m (~12 % of the traffic).
     areaFilters(box, maxFilters, onlyMoved ? [0, 1, 2, 3] : null, topicModes(modes)),
   route: (_city, routeId) => routeFilter(routeId),
-  vehicle: (_city, m) => vehicleFilter(m.oper, m.veh),
+  vehicle: (_city, m) => `${BASE}/+/${m.id}/#`, // id = oper/veh, as in the topic
   vehicleNumber: (_city, n) => vehicleNumberFilter(n),
 }

@@ -158,11 +158,11 @@ const tripLine = new TripLine(map, canvas, (s) => selectStop(s))
 const stopsLayer = new StopsLayer(map, canvas, (s) => selectStop(s))
 stopsLayer.modes = modes
 const vehicles = new Vehicles(map, canvas, (id) => select(id), onSelectedUpdate)
-const isSearchedVehicle = (m: Msg) => m.city === searchCity.id && m.veh !== '' && vehNums.includes(+m.veh)
+const isSearchedVehicle = (m: Msg) => m.city === searchCity.id && m.veh != null && vehNums.includes(+m.veh)
 vehicles.filter = (m) =>
   modes.has(m.mode) &&
   (terms.length === 0 ||
-    (m.city === searchCity.id && lines.includes(m.desi.toUpperCase())) ||
+    (m.city === searchCity.id && !!m.desi && lines.includes(m.desi.toUpperCase())) ||
     isSearchedVehicle(m))
 vehicles.anywhere = isSearchedVehicle
 
@@ -491,7 +491,7 @@ function renderCard(m: Msg): void {
   setCard(`
     <div class="ch">
       <span class="badge ${modeClass(m.mode)}">${escapeHtml(m.desi || '?')}</span>
-      <div class="dest"><b>${escapeHtml(dest ? `→ ${dest}` : m.desi)}</b><small>${meta}</small></div>
+      <div class="dest"><b>${escapeHtml(dest ? `→ ${dest}` : (m.desi ?? ''))}</b><small>${meta}</small></div>
       <button type="button" class="ib" data-act="close" aria-label="Close">
         <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>

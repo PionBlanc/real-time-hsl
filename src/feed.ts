@@ -18,28 +18,34 @@ export const COLORS: Record<Mode, string> = {
 
 export type Box = Area
 
-/** One vehicle-position update, the same shape whichever feed it came from. */
+/**
+ * One vehicle-position update, the same shape whichever feed it came from.
+ *
+ * Convention: a fact shown to the user is null when the feed doesn't have it, and the UI
+ * leaves it out. Never fill in a default that looks like real data (doors "closed", a
+ * guessed vehicle number…). Ids used only for matching are "" when absent.
+ */
 export interface Msg {
-  city: CityId       // which city's feed this vehicle is in
-  id: string         // stable vehicle identity, unique across cities
-  mode: Mode         // transport mode, normalised
-  oper: string       // operator id as in the feed ("" if the feed has none)
-  veh: string        // vehicle (side) number, digits, may be zero-padded ("01234"); "" if unknown
-  route: string      // route id without the feed prefix, e.g. "2550"
-  dir: string        // direction: "1" or "2" (HFP style; GTFS 0/1 is converted)
-  headsign: string   // destination name shown on the vehicle ("" if the feed has none)
-  start: string      // scheduled trip start, local "HH:mm"; "" if unknown
-  tripId: string     // GTFS trip id without the feed prefix; "" if the feed has none (HSL)
-  nextStop: string   // stop id without the feed prefix, or "EOL"/""
-  desi: string       // route number shown to passengers, e.g. "550"
-  lat: number        // latitude, WGS84
-  lng: number        // longitude, WGS84
-  hdg: number | null // heading, degrees clockwise from north
-  spd: number | null // speed, m/s
-  dl: number | null  // schedule deviation, seconds: negative = late, positive = early; null if unknown
-  doorsOpen: boolean
-  oday: string       // operating day YYYY-MM-DD; after-midnight trips belong to the previous day
-  tst: string        // timestamp of this position, UTC ISO 8601
+  city: CityId              // which city's feed this vehicle is in
+  id: string                // stable vehicle identity, unique across cities
+  mode: Mode                // transport mode, normalised
+  oper: string | null       // operator id as in the feed
+  veh: string | null        // number painted on the vehicle (side number), may be zero-padded ("01234")
+  route: string             // route id without the feed prefix, e.g. "2550"
+  dir: string               // direction: "1" or "2" (HFP style; GTFS 0/1 is converted)
+  headsign: string | null   // destination name shown on the vehicle
+  start: string             // scheduled trip start, local "HH:mm"; "" if unknown
+  tripId: string            // GTFS trip id without the feed prefix; "" if the feed has none (HSL)
+  nextStop: string          // stop id without the feed prefix, or "EOL"/""
+  desi: string | null       // route number shown to passengers, e.g. "550"
+  lat: number               // latitude, WGS84
+  lng: number               // longitude, WGS84
+  hdg: number | null        // heading, degrees clockwise from north
+  spd: number | null        // speed, m/s
+  dl: number | null         // schedule deviation, seconds: negative = late, positive = early
+  doorsOpen: boolean | null // some door open
+  oday: string              // operating day YYYY-MM-DD; after-midnight trips belong to the previous day
+  tst: string               // timestamp of this position, UTC ISO 8601
 }
 
 /**
