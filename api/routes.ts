@@ -15,10 +15,8 @@ export default async function handler(req: Request): Promise<Response> {
   const params = new URL(req.url).searchParams
   const city = cityParam(params)
   const q = params.get('q') ?? ''
-  // Shapes of real line names (HSL, checked 2026-11: 551, 550B, 15, 9N, M1, I, U1A, 200AB…;
-  // Nysse: 1, 3, 8A, 70X), with a little slack. Keeps the uncacheable keyspace small. Upper case only (the client
-  // upper-cases), so "m1" and "M1" don't cache separately.
-  if (!city || !/^(?:[A-Z]\d{0,2}[A-Z]?|\d{1,4}[A-Z]{0,2})$/.test(q)) return badRequest()
+  // Upper case only (the client upper-cases), so "m1" and "M1" don't cache separately.
+  if (!city || !city.ids.line.test(q)) return badRequest()
   try {
     const d = await graphql<{ routes: Array<{ gtfsId: string; shortName: string | null; mode: string }> }>(
       key,

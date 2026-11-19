@@ -965,7 +965,8 @@ function resolveLines(want: Array<string>): void {
   if (!__HAS_KEY__) return // filter only within the visible area
   const wantTerms = terms
   const city = searchCity
-  Promise.all(want.map((l) => fetchRoutes(city, l)))
+  // A term that can't be one of this city's line names (e.g. "M1" outside Helsinki) has no routes.
+  Promise.all(want.map((l) => (city.ids.line.test(l) ? fetchRoutes(city, l) : [])))
     .then((rs) => {
       if (terms !== wantTerms || city !== searchCity) return
       const ids = [...new Set(rs.flat().map((r) => r.id))]

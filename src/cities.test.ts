@@ -91,9 +91,8 @@ describe('/api/trip', () => {
     const f = upstream({})
     const date = new Date().toISOString().slice(0, 10)
     for (const q of [
-      'city=tampere&route=5&dir=1&date=' + date + '&time=60', // HFP-style lookup for a GTFS-RT city
-      'city=hsl&trip=137_1', // trip id for HSL
       'city=tampere&trip=a/b',
+      'city=tampere&trip=1&route=5', // both kinds at once
       'route=2551&dir=1&date=' + date + '&time=60', // no city
     ])
       expect((await get(trip, q)).status, q).toBe(400)
@@ -146,6 +145,13 @@ describe('/api/stops', () => {
 })
 
 describe('/api/routes', () => {
+  it("rejects names that can't be the city's lines", async () => {
+    const f = upstream({ routes: [] })
+    expect((await get(routes, 'city=hsl&q=M1')).status).toBe(200)
+    expect((await get(routes, 'city=tampere&q=M1')).status).toBe(400)
+    expect((await get(routes, 'city=jyvaskyla&q=38K')).status).toBe(200)
+    expect(f).toHaveBeenCalledTimes(2)
+  })
   it("returns only the city's routes", async () => {
     const f = upstream({
       routes: [

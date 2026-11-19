@@ -35,8 +35,12 @@ export interface City {
   area: Area
   /** Where the zoomed-out city marker sits and where tapping it goes. */
   center: [number, number]
-  /** Shapes of this feed's ids (without the feed prefix). The API rejects anything else. */
-  ids: { stop: RegExp; route: RegExp; trip: RegExp }
+  /**
+   * Shapes of this feed's ids (without the feed prefix) and line names (as shown to
+   * passengers, upper case). The API rejects anything else, which also keeps the
+   * uncacheable keyspace small.
+   */
+  ids: { stop: RegExp; route: RegExp; trip: RegExp; line: RegExp }
 }
 
 export const CITIES: ReadonlyArray<City> = [
@@ -54,6 +58,8 @@ export const CITIES: ReadonlyArray<City> = [
       // 2–4 digits plus up to 3 more (2551, 1001H, 31M1, 3002U, 4611BK…; checked 2026-11).
       route: /^\d{2,4}[0-9A-Z]{0,3}$/,
       trip: /^[0-9A-Za-z_]{1,64}$/,
+      // 551, 550B, 15, 9N, M1, I, U1A, 200AB… (checked 2026-11), with a little slack.
+      line: /^(?:[A-Z]\d{0,2}[A-Z]?|\d{1,4}[A-Z]{0,2})$/,
     },
   },
   {
@@ -66,10 +72,11 @@ export const CITIES: ReadonlyArray<City> = [
     area: { south: 61.2, west: 23.2, north: 61.95, east: 24.5 },
     center: [61.4978, 23.761],
     ids: {
-      // Live data 2026-11: stops "3598", routes "5", trips "137_22357_17849130".
+      // Live data 2026-11: stops "3598", routes "5", trips "137_22357_17849130", lines 1, 29B, 70X.
       stop: /^[0-9A-Za-z_]{1,16}$/,
       route: /^[0-9A-Za-z_]{1,16}$/,
       trip: /^[0-9A-Za-z_.-]{1,64}$/,
+      line: /^\d{1,3}[A-Z]{0,2}$/,
     },
   },
   {
@@ -83,10 +90,11 @@ export const CITIES: ReadonlyArray<City> = [
     center: [60.4518, 22.2666],
     ids: {
       // Live data 2026-11: stops "178", routes "220", trips "00015642__1220040100".
-      // Föli's topics have no headsign; the trip lookup supplies it.
+      // Lines 1, 3A, N11. Föli's topics have no headsign; the trip lookup supplies it.
       stop: /^[0-9A-Za-z_]{1,16}$/,
       route: /^[0-9A-Za-z_]{1,16}$/,
       trip: /^[0-9A-Za-z_.-]{1,64}$/,
+      line: /^[A-Z]?\d{1,3}[A-Z]?$/,
     },
   },
   {
@@ -100,10 +108,11 @@ export const CITIES: ReadonlyArray<City> = [
     center: [62.2415, 25.7482],
     ids: {
       // Live data 2026-11: stops "309822", routes "9121" (shown as "12"),
-      // trips "M-P_koulp_talvi_2024-2025_9121_1_094000_101900_0".
+      // trips "M-P_koulp_talvi_2024-2025_9121_1_094000_101900_0", lines 3, S5, 38K, 140.
       stop: /^[0-9A-Za-z_]{1,16}$/,
       route: /^[0-9A-Za-z_]{1,16}$/,
       trip: /^[0-9A-Za-z_.-]{1,80}$/,
+      line: /^[A-Z]?\d{1,3}[A-Z]?$/,
     },
   },
 ]

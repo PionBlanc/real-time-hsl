@@ -1,8 +1,8 @@
 // GET /api/trip?city=hsl&route=2551&dir=1&date=2026-11-17&time=61200   (HSL)
 // GET /api/trip?city=tampere&trip=137_22357_17849130           (GTFS-RT cities)
 // Resolves a live vehicle to its GTFS trip: path geometry + stops with scheduled times.
-// HFP has no trip id, so HSL vehicles are matched by route, direction, day and start time;
-// GTFS-RT vehicles carry their trip id.
+// Vehicles that know their trip id (GTFS-RT) are looked up by it; others (HFP has none) are
+// matched by route, direction, day and start time. Which one is up to what the vehicle sends.
 import { localId } from './_cities'
 import type { City } from './_cities'
 import {
@@ -54,7 +54,7 @@ interface Resp {
 
 /** The GraphQL query and variables for this request, or null if it's malformed. */
 function lookup(city: City, q: URLSearchParams): { query: string; vars: Record<string, unknown> } | null {
-  if (city.live === 'gtfsrt') {
+  if (q.has('trip')) {
     const trip = q.get('trip') ?? ''
     if ([...q.keys()].length !== 2 || !city.ids.trip.test(trip)) return null
     return { query: ID_QUERY, vars: { id: `${city.feedId}:${trip}` } }
@@ -64,7 +64,6 @@ function lookup(city: City, q: URLSearchParams): { query: string; vars: Record<s
   const date = q.get('date') ?? ''
   const time = canonicalInt(q.get('time'))
   if (
-    q.has('trip') ||
     !city.ids.route.test(route) ||
     !/^[12]$/.test(dir) ||
     !/^\d{4}-\d{2}-\d{2}$/.test(date) ||

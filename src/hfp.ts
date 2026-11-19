@@ -4,12 +4,15 @@
  *
  * Topic: /hfp/v2/journey/ongoing/vp/<mode>/<oper>/<veh>/<route>/<dir>/<headsign>/<start>/<next_stop>/<geohash_level>/<geohash...>
  */
+import { CITIES } from '../api/_cities'
 import { MODES, geohashCells, num } from './feed'
 import type { Box, Feed, Mode, Msg } from './feed'
 
 // VITE_BROKER is only for local testing against a fake broker.
 export const BROKER: string = import.meta.env.VITE_BROKER || 'wss://mqtt.hsl.fi:443/'
 const BASE = '/hfp/v2/journey/ongoing/vp'
+/** The one city on this feed (HFP is HSL's own). */
+const CITY = CITIES.find((c) => c.live === 'hfp')!
 
 /**
  * The `VP` (vehicle position) object of an HFP payload: `{"VP": {...}}`.
@@ -81,7 +84,7 @@ export function parseMessage(topic: string, payload: Uint8Array): Msg | null {
   const start = p[12] || vp.start || ''
   const oday = vp.oday || ''
   return {
-    city: 'hsl',
+    city: CITY.id,
     id: `${p[7]}/${p[8]}`,
     mode,
     oper: p[7],
