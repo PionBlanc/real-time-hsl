@@ -209,8 +209,30 @@ svg {
   gap: 10px;
   pointer-events: none;
 }
-#bottom > * {
+#bottom > *,
+#buttons > * {
   pointer-events: auto;
+}
+/* Privacy on the left, locate on the right, on one row above the card. */
+#buttons {
+  align-self: stretch;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  pointer-events: none !important;
+}
+#info {
+  border: 0;
+  border-radius: 14px;
+  padding: 5px 11px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  box-shadow: var(--shadow);
+}
+#info[aria-expanded='true'] {
+  color: var(--ink);
 }
 #locate {
   width: 52px;
@@ -435,7 +457,7 @@ svg {
   color: var(--muted);
 }
 
-/* ---------- about & privacy panel (the (i) button) ---------- */
+/* ---------- privacy panel ---------- */
 .info {
   font-size: 14px;
   line-height: 1.45;

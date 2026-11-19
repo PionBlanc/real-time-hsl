@@ -22,7 +22,7 @@ moving in real time.
   same way, as far as each city's data goes (e.g. only HSL sends delays and door status). Zoom out to see a marker
   per city; tap one to go there. Searches and stop links follow the city on screen, which is
   kept in the URL (`/?city=tampere&line=3`, `/?stop=tampere:3598`; HSL links have no city).
-- **(i)** in the search bar: what the app stores (only in your browser) and sends, and a
+- **Privacy** (bottom left): what the app stores (only in your browser) and sends, and a
   "Forget my location" button. No cookies or analytics. Keep its text in sync if that changes.
 - **Crosshair**: show your location. The location permission is only requested when you tap
   it; after that, the app opens on your position automatically.
