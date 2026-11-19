@@ -31,7 +31,12 @@ export interface City {
    * GTFS-RT feed (mqtt.digitransit.fi). Decides how vehicles are matched to trips, too.
    */
   live: 'hfp' | 'gtfsrt'
-  /** Service area, with a margin. Live data, stops and map tiles are limited to it. */
+  /**
+   * Service area, with a margin. Live data, stops and map tiles are limited to it.
+   * Areas may overlap (neighbouring regions, a small town inside a big region's box):
+   * vehicles and stops of every city in view are shown regardless. Only searches and the
+   * URL need one city, and for a point in several areas the smallest one wins (cityAt).
+   */
   area: Area
   /** Where the zoomed-out city marker sits and where tapping it goes. */
   center: [number, number]
@@ -140,9 +145,16 @@ export function intersect(a: Area, b: Area): Area | null {
   }
 }
 
-/** The city whose service area contains this point, if any. */
+const size = (a: Area): number => (a.north - a.south) * (a.east - a.west)
+
+/**
+ * The city at this point: of the areas containing it, the smallest (the most specific, so a
+ * town wins inside a big region's box). Null if none.
+ */
 export function cityAt(lat: number, lng: number): City | null {
-  return CITIES.find((c) => inArea(c.area, lat, lng)) ?? null
+  let best: City | null = null
+  for (const c of CITIES) if (inArea(c.area, lat, lng) && (!best || size(c.area) < size(best.area))) best = c
+  return best
 }
 
 /** Strip a city's feed prefix from a GTFS id ("tampere:3598" → "3598"); null if it's another feed's id. */

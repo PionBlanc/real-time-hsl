@@ -1,7 +1,8 @@
 // Tests for the city config and the city-aware /api endpoints.
 // (Kept in src/: every file in /api would become a Vercel route.)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { CITIES, cityAt, intersect, localId } from '../api/_cities'
+import { CITIES, cityAt, localId } from '../api/_cities'
+import type { City } from '../api/_cities'
 import { cityParam } from '../api/_digitransit'
 import trip from '../api/trip'
 import stop from '../api/stop'
@@ -11,10 +12,9 @@ import routes from '../api/routes'
 const qs = (s: string) => new URLSearchParams(s)
 
 describe('cities', () => {
-  it('have unique ids and feeds, and areas that do not overlap', () => {
+  it('have unique ids and feeds', () => {
     expect(new Set(CITIES.map((c) => c.id)).size).toBe(CITIES.length)
     expect(new Set(CITIES.map((c) => c.feedId)).size).toBe(CITIES.length)
-    for (const a of CITIES) for (const b of CITIES) if (a !== b) expect(intersect(a.area, b.area)).toBeNull()
   })
   it('each contain their own centre', () => {
     for (const c of CITIES) expect(cityAt(...c.center)).toBe(c)
@@ -25,6 +25,16 @@ describe('cities', () => {
     expect(cityAt(60.45, 22.27)?.id).toBe('turku')
     expect(cityAt(62.24, 25.75)?.id).toBe('jyvaskyla')
     expect(cityAt(65.01, 25.47)).toBeNull() // Oulu: not in the app yet
+  })
+  it('picks the smallest area where areas overlap', () => {
+    const town = { ...CITIES[0], id: 'town', area: { south: 60.6, west: 24.8, north: 60.7, east: 24.9 } } as unknown as City
+    ;(CITIES as Array<City>).push(town)
+    try {
+      expect(cityAt(60.65, 24.85)).toBe(town) // inside both: the town
+      expect(cityAt(60.17, 24.94)?.id).toBe('hsl') // only in HSL's box
+    } finally {
+      ;(CITIES as Array<City>).pop()
+    }
   })
   it('strips only its own feed prefix', () => {
     const [hsl, tampere] = CITIES
