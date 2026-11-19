@@ -6,6 +6,8 @@
 // A Node function, not an edge function like the rest of /api: sharp is a native module. Its
 // region is set in vercel.json. The ".js" in the import is required by Node's ESM loader.
 import sharp from 'sharp'
+import { CITIES } from './_cities.js'
+import type { Area } from './_cities.js'
 import { UPSTREAM_TIMEOUT_MS, apiKey, canonicalInt, guard } from './_digitransit.js'
 
 // One tile per invocation: no use for libvips' cache or extra threads.
@@ -18,11 +20,17 @@ const SOURCE = 'hsl-map-en' // English labels; 512 px tiles (1024 px with @2x)
 const WEBP_QUALITY = { '': 80, '2x': 75 } as const
 const CACHE_TILE = 'public, max-age=604800, s-maxage=2592000, stale-while-revalidate=2592000'
 
-// The client uses zoomOffset -1 with map zoom 8–18, so it requests tile zooms 7–17.
-const MIN_Z = 7
+// The client uses zoomOffset -1 with map zoom 5–18, so it requests tile zooms 4–17.
+const MIN_Z = 4
 const MAX_Z = 17
-// Only tiles around the HSL region are served (lat/lon degrees, generous margin).
-const AREA = { south: 59.5, north: 61.0, west: 23.0, east: 27.0 }
+/**
+ * Zoomed out this far (map zoom 8 and below, where the app shows its city markers), tiles
+ * cover all of Finland: only a few dozen tiles in total.
+ */
+const OVERVIEW_MAX_Z = 7
+const FINLAND: Area = { south: 59.5, west: 19.0, north: 70.2, east: 31.7 }
+// Closer in, only tiles overlapping a city's service area, not the countryside between cities.
+const AREAS: ReadonlyArray<Area> = CITIES.map((c) => c.area)
 
 const lonToX = (lon: number, z: number) => Math.floor(((lon + 180) / 360) * 2 ** z)
 function latToY(lat: number, z: number): number {
@@ -30,16 +38,17 @@ function latToY(lat: number, z: number): number {
   return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** z)
 }
 
-/** True for a tile that overlaps AREA (bounds also keep x, y below 2^z). */
+const tileOverlaps = (a: Area, z: number, x: number, y: number): boolean =>
+  x >= lonToX(a.west, z) &&
+  x <= lonToX(a.east, z) &&
+  y >= latToY(a.north, z) && // y grows southwards
+  y <= latToY(a.south, z)
+
+/** True for a tile that is served (the bounds also keep x, y below 2^z). */
 export function tileInArea(z: number, x: number, y: number): boolean {
-  return (
-    z >= MIN_Z &&
-    z <= MAX_Z &&
-    x >= lonToX(AREA.west, z) &&
-    x <= lonToX(AREA.east, z) &&
-    y >= latToY(AREA.north, z) && // y grows southwards
-    y <= latToY(AREA.south, z)
-  )
+  if (z < MIN_Z || z > MAX_Z) return false
+  if (z <= OVERVIEW_MAX_Z) return tileOverlaps(FINLAND, z, x, y)
+  return AREAS.some((a) => tileOverlaps(a, z, x, y))
 }
 
 const bad = () => new Response('bad request', { status: 400, headers: { 'cache-control': 'no-store' } })

@@ -18,6 +18,9 @@ moving in real time.
   find that vehicle anywhere. Operators can share numbers, so there may be more than one.
   Combine with lines: `551 #1234`.
 - **Type chips** under the search bar: tap Bus / Tram / … to hide or show that type.
+- **Cities**: Helsinki (HSL) and Tampere (Nysse) work the same way. Zoom out to see a marker
+  per city; tap one to go there. Searches and stop links follow the city on screen, which is
+  kept in the URL (`/?city=tampere&line=3`, `/?stop=tampere:3598`; HSL links have no city).
 - **Crosshair**: show your location. The location permission is only requested when you tap
   it; after that, the app opens on your position automatically.
 
@@ -25,16 +28,21 @@ moving in real time.
 
 | Piece | What | Size |
 | --- | --- | --- |
-| `src/mqtt.ts` | Minimal MQTT-over-WebSocket client for HSL's open [HFP](https://digitransit.fi/en/developers/apis/5-realtime-api/vehicle-positions/high-frequency-positioning/) feed (`wss://mqtt.hsl.fi`, no key) | ~2 KB |
-| `src/hfp.ts` | Topic parsing; builds **geohash topic filters for the visible map area** so the phone only receives nearby vehicles. When zoomed out it subscribes only to "moved ~100 m" updates (~12 % of traffic) | |
+| `api/_cities.ts` | **The cities**: feed ids, Digitransit router, service area, id shapes. Shared by the app and `/api`. Adding a city starts here | |
+| `src/feed.ts` | What all live feeds have in common: the `Msg` every vehicle update becomes, and the `Feed` interface | |
+| `src/mqtt.ts` | Minimal MQTT-over-WebSocket client (no key needed for either broker) | ~2 KB |
+| `src/live.ts` | One MQTT connection per broker, opened only once something on it is wanted | |
+| `src/hfp.ts` | HSL's [HFP](https://digitransit.fi/en/developers/apis/5-realtime-api/vehicle-positions/high-frequency-positioning/) feed (`wss://mqtt.hsl.fi`). Builds **geohash topic filters for the visible map area** so the phone only receives nearby vehicles. When zoomed out it subscribes only to "moved ~100 m" updates (~12 % of traffic) | |
+| `src/gtfsrt.ts` | Digitransit's [GTFS-RT feed](https://digitransit.fi/en/developers/apis/5-realtime-api/vehicle-positions/digitransit-mqtt/) for the other cities (`wss://mqtt.digitransit.fi`): same geohash area filters, plus a tiny protobuf decoder. No delay or door status in this feed | |
+| `src/city-markers.ts` | Zoomed-out city markers | |
 | `src/vehicles.ts` | Leaflet markers, batched per frame, smooth CSS movement | |
 | `src/trip-line.ts` | Route drawing split at the vehicle | |
-| `api/trip.ts` | Edge function: vehicle → GTFS trip (path + stops) via Digitransit `fuzzyTrip` | CDN-cached 1 day |
+| `api/trip.ts` | Edge function: vehicle → GTFS trip (path + stops): by trip id (GTFS-RT) or Digitransit `fuzzyTrip` (HSL) | CDN-cached 1 day |
 | `src/stops.ts` | Stop dots for the visible area (zoom ≥ 15), loaded per fixed grid cell | |
 | `api/stop.ts` | Edge function: a stop's next departures (realtime where available) | CDN-cached 15 s |
 | `api/stops.ts` | Edge function: stops in one grid cell | CDN-cached 1 day |
 | `api/routes.ts` | Edge function: line number → route ids, for the line filter | CDN-cached |
-| `api/tile.ts` | Node function (Stockholm): proxies HSL's English background map tiles and converts them to WebP | CDN-cached 30 days |
+| `api/tile.ts` | Node function (Stockholm): proxies HSL's English background map tiles and converts them to WebP. Only the cities' areas close up, all of Finland when zoomed out | CDN-cached 30 days |
 | `public/sw.js` | Service worker: the app opens instantly from cache after the first visit | |
 
 The whole app is about 52 KB of JS and 8 KB of CSS (gzipped), mostly Leaflet. Live data

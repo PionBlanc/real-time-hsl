@@ -1,8 +1,9 @@
 import L from 'leaflet'
+import { CITIES, overlaps } from '../api/_cities'
 import { CELL_LAT, CELL_LON, fetchStopCell } from './api'
 import type { StopRef } from './api'
-import { COLORS } from './hfp'
-import type { Mode } from './hfp'
+import { COLORS } from './feed'
+import type { Mode } from './feed'
 import { escapeHtml } from './trip-line'
 
 /** Stops are only drawn when zoomed in this far (there are ~7000 of them). */
@@ -40,15 +41,21 @@ export class StopsLayer {
     const lo1 = Math.floor(b.getEast() / CELL_LON)
     if ((la1 - la0 + 1) * (lo1 - lo0 + 1) > 12) return // guard against huge screens
     for (let la = la0; la <= la1; la++)
-      for (let lo = lo0; lo <= lo1; lo++)
-        fetchStopCell(la, lo)
-          .then((list) => list.forEach((s) => this.add(s)))
-          .catch(() => {}) // no key / offline: just no stop dots
+      for (let lo = lo0; lo <= lo1; lo++) {
+        const cell = { south: la * CELL_LAT, north: (la + 1) * CELL_LAT, west: lo * CELL_LON, east: (lo + 1) * CELL_LON }
+        // Only cities whose area the cell touches: between cities there is nothing to fetch.
+        for (const city of CITIES)
+          if (overlaps(city.area, cell))
+            fetchStopCell(city, la, lo)
+              .then((list) => list.forEach((s) => this.add(s)))
+              .catch(() => {}) // no key / offline: just no stop dots
+      }
   }
 
   private add(s: StopRef): void {
-    if (this.markers.has(s.id)) return
-    this.stops.set(s.id, s)
+    const key = stopKey(s)
+    if (this.markers.has(key)) return
+    this.stops.set(key, s)
     const c = s.mode ? COLORS[s.mode] : '#5d6874'
     const m = L.circleMarker([s.lat, s.lng], {
       renderer: this.renderer,
@@ -61,7 +68,7 @@ export class StopsLayer {
     })
       .bindTooltip(stopLabel(s), { direction: 'top', offset: [0, -6] })
       .on('click', () => this.onClick(s))
-    this.markers.set(s.id, m)
+    this.markers.set(key, m)
     if (this.visible(s)) {
       this.group.addLayer(m)
       m.bringToBack() // keep under a selected vehicle's route line
@@ -100,6 +107,9 @@ export class StopsLayer {
     }).addTo(this.map)
   }
 }
+
+/** Stop ids are only unique within a city. */
+export const stopKey = (s: { city: string; id: string }): string => `${s.city}:${s.id}`
 
 export function stopLabel(s: { name: string; code: string }): string {
   return `${escapeHtml(s.name)}${s.code ? ` <small>${escapeHtml(s.code)}</small>` : ''}`

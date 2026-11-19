@@ -1,6 +1,6 @@
 import L from 'leaflet'
 import type { StopRef, Trip } from './api'
-import type { Mode } from './hfp'
+import type { Mode } from './feed'
 
 type LL = [number, number]
 
@@ -95,7 +95,7 @@ export class TripLine {
           offset: [0, -6],
         })
         .on('click', () =>
-          this.onStopClick({ id: s.id, name: s.name, code: s.code, lat: s.lat, lng: s.lng, mode }),
+          this.onStopClick({ city: trip.city, id: s.id, name: s.name, code: s.code, lat: s.lat, lng: s.lng, mode }),
         ),
     )
     for (const d of this.stopDots) this.group.addLayer(d)

@@ -1,30 +1,28 @@
 import 'leaflet/dist/leaflet.css'
 import './styles.css'
 import L from 'leaflet'
-import { MqttClient } from './mqtt'
+import { CITIES, DEFAULT_CITY, cityAt, cityById, inArea, intersect } from '../api/_cities'
+import type { City } from '../api/_cities'
 import type { MqttStatus } from './mqtt'
-import {
-  BROKER,
-  COLORS,
-  MODES,
-  areaFilters,
-  clock,
-  delayText,
-  helsinkiDate,
-  nowServiceSeconds,
-  parseMessage,
-  routeFilter,
-  topicModes,
-  tripStartSeconds,
-  vehicleFilter,
-  vehicleNumberFilter,
-} from './hfp'
-import type { Mode, Msg } from './hfp'
+import { COLORS, MODES } from './feed'
+import type { Feed, Mode, Msg } from './feed'
+import { Live, feedOf } from './live'
+import { clock, delayText, helsinkiDate, nowServiceSeconds, tripStartSeconds } from './time'
 import { Vehicles } from './vehicles'
 import { TripLine, escapeHtml } from './trip-line'
-import { MissingKeyError, STOP_PAGE, departureKey, fetchRoutes, fetchStopBoard, fetchTrip, tripKey } from './api'
+import {
+  MissingKeyError,
+  STOP_PAGE,
+  canFetchTrip,
+  departureKey,
+  fetchRoutes,
+  fetchStopBoard,
+  fetchTrip,
+  tripKey,
+} from './api'
 import type { Departure, StopBoard, StopRef, Trip } from './api'
-import { StopsLayer } from './stops'
+import { StopsLayer, stopKey } from './stops'
+import { CityMarkers } from './city-markers'
 
 declare const __HAS_KEY__: boolean
 
@@ -64,13 +62,20 @@ const lastView = store.get<{ lat: number; lng: number; z: number }>('view')
 // Re-save values stored precisely by older versions.
 if (lastGps) store.set('gps', { lat: coarse(lastGps.lat), lng: coarse(lastGps.lng) })
 if (lastView) store.set('view', { lat: coarse(lastView.lat), lng: coarse(lastView.lng), z: lastView.z })
-const start: [number, number, number] = lastGps
+/** A ?city=tampere link opens that city, unless you're already in it. */
+const linkCity = cityById(new URL(location.href).searchParams.get('city'))
+let start: [number, number, number] = lastGps
   ? [lastGps.lat, lastGps.lng, 15]
   : lastView
     ? [lastView.lat, lastView.lng, lastView.z]
-    : [60.1699, 24.9384, 13]
+    : [...DEFAULT_CITY.center, 13]
+const openedLinkCity = !!linkCity && !inArea(linkCity.area, start[0], start[1])
+if (openedLinkCity) start = [...linkCity.center, 13]
 
-const map = L.map(mapEl, { zoomControl: false, minZoom: 8, maxZoom: 18 }).setView(
+/** Below this zoom the map is an overview of the cities (tiles cover all of Finland; see api/tile.ts). */
+const MAP_MIN_ZOOM = 5
+
+const map = L.map(mapEl, { zoomControl: false, minZoom: MAP_MIN_ZOOM, maxZoom: 18 }).setView(
   [start[0], start[1]],
   start[2],
 )
@@ -113,7 +118,13 @@ let lineRoutes: Array<string> | null = null // resolved HFP route ids for `lines
 let selected: string | null = null
 let followVehicle = false
 let followMe = false
-let userMoved = false
+// A ?city= link that moved the map counts as a choice: don't jump back to GPS.
+let userMoved = openedLinkCity
+/**
+ * The city that line and vehicle-number searches look in: the one on screen, or the last one
+ * seen. Line numbers repeat between cities ("5" runs in Helsinki and in Tampere).
+ */
+let searchCity: City = cityAt(start[0], start[1]) ?? DEFAULT_CITY
 let gps: L.LatLng | null = null
 let trip: Trip | null = null
 let tripK = ''
@@ -125,10 +136,12 @@ const tripLine = new TripLine(map, canvas, (s) => selectStop(s))
 const stopsLayer = new StopsLayer(map, canvas, (s) => selectStop(s))
 stopsLayer.modes = modes
 const vehicles = new Vehicles(map, canvas, (id) => select(id), onSelectedUpdate)
-const isSearchedVehicle = (m: Msg) => vehNums.includes(+m.veh)
+const isSearchedVehicle = (m: Msg) => m.city === searchCity.id && m.veh !== '' && vehNums.includes(+m.veh)
 vehicles.filter = (m) =>
   modes.has(m.mode) &&
-  (terms.length === 0 || lines.includes(m.desi.toUpperCase()) || isSearchedVehicle(m))
+  (terms.length === 0 ||
+    (m.city === searchCity.id && lines.includes(m.desi.toUpperCase())) ||
+    isSearchedVehicle(m))
 vehicles.anywhere = isSearchedVehicle
 
 // ---------------------------------------------------------------- live data
@@ -144,12 +157,8 @@ const CONN_HINT_DELAY_MS = 3000
 let wasOnline = false
 let lastStatus: MqttStatus = 'offline'
 let connHintTimer: ReturnType<typeof setTimeout> | undefined
-const mqtt = new MqttClient(
-  BROKER,
-  (topic, payload) => {
-    const m = parseMessage(topic, payload)
-    if (m) vehicles.push(m)
-  },
+const liveFeeds = new Live(
+  (m) => vehicles.push(m),
   (s) => {
     statusEl.className = `dot ${s}`
     statusEl.title = STATUS_TEXT[s]
@@ -183,28 +192,45 @@ const AREA_MIN_ZOOM = 11
 /** Accepts no new vehicles (a zero-size box in the sea off Africa). */
 const NOWHERE = L.latLngBounds([0, 0], [0, 0])
 
+/** Topic filters per feed, built up city by city. */
+class Topics {
+  readonly byFeed = new Map<Feed, Array<string>>()
+  add(city: City, ...topics: Array<string>): void {
+    const feed = feedOf(city)
+    const list = this.byFeed.get(feed) ?? []
+    list.push(...topics)
+    this.byFeed.set(feed, list)
+  }
+}
+
 /** Subscribe to exactly what's needed: the visible area, or the searched lines/vehicles anywhere. */
 function updateTopics(): void {
-  const topics: Array<string> = vehNums.map(vehicleNumberFilter)
+  const topics = new Topics()
+  const sc = searchCity
+  for (const n of vehNums) topics.add(sc, feedOf(sc).vehicleNumber(sc, n))
   const z = map.getZoom()
   let hint = ''
   // Without resolved route ids, line search falls back to filtering the visible area.
   const lineMode = terms.length > 0 && (lines.length === 0 || lineRoutes !== null)
   if (lineMode) {
-    if (lineRoutes) topics.push(...lineRoutes.map(routeFilter))
-  } else {
+    if (lineRoutes) topics.add(sc, ...lineRoutes.map((r) => feedOf(sc).route(sc, r)))
+  } else if (z >= AREA_MIN_ZOOM) {
     const b = map.getBounds().pad(0.15)
-    const box = { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() }
-    // Close up: every update (~1/s per vehicle). Further out: only when a vehicle
-    // moved ~100 m (geohash levels 0–3, ~12 % of the traffic).
-    const tm = topicModes(modes)
-    if (z >= COMPACT_BELOW_ZOOM) topics.push(...areaFilters(box, 160, null, tm))
-    else if (z >= AREA_MIN_ZOOM) topics.push(...areaFilters(box, 160, [0, 1, 2, 3], tm))
-    else hint = 'Zoom in to see vehicles'
+    const view = { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() }
+    // Close up: every update (~1/s per vehicle). Further out: only when a vehicle moved
+    // ~100 m, on feeds that support it (HSL: ~12 % of the traffic).
+    const onlyMoved = z < COMPACT_BELOW_ZOOM
+    for (const city of CITIES) {
+      const box = intersect(view, city.area) // nothing between cities
+      if (box) topics.add(city, ...feedOf(city).area(city, box, 160, onlyMoved, modes))
+    }
+  } else {
+    hint = 'Zoom in to see vehicles'
   }
   const sel = selected ? vehicles.get(selected) : undefined
-  if (sel) topics.push(vehicleFilter(sel.oper, sel.veh))
-  mqtt.setTopics(topics)
+  const selCity = sel && cityById(sel.city)
+  if (sel && selCity) topics.add(selCity, feedOf(selCity).vehicle(selCity, sel))
+  liveFeeds.setTopics(topics.byFeed)
   if (lineMode) {
     vehicles.area = null
   } else if (z < AREA_MIN_ZOOM) {
@@ -221,12 +247,47 @@ function updateTopics(): void {
   setZoomHint(hint)
 }
 
+/** Set or remove (null) a query param of the page URL, without a new history entry. */
+function setParam(k: string, v: string | null): void {
+  const u = new URL(location.href)
+  if (v == null) u.searchParams.delete(k)
+  else u.searchParams.set(k, v)
+  if (u.href !== location.href) history.replaceState(null, '', u)
+}
+
+/**
+ * Keep track of the city on screen: it goes in the URL (?city=tampere, none for HSL), so links
+ * open in the right city, and searches move to it ("5" now means Tampere's line 5).
+ */
+function followCity(): void {
+  const c = map.getCenter()
+  const city = cityAt(c.lat, c.lng)
+  if (!city) return // between cities: keep the last one
+  setParam('city', city === DEFAULT_CITY ? null : city.id)
+  if (city === searchCity) return
+  searchCity = city
+  if (!terms.length) return
+  lineRoutes = null
+  vehicles.refilter()
+  startSearch()
+}
+
+/** Zoomed out: one marker per city instead of vehicles. Tap one to go there. */
+const cityMarkers = new CityMarkers(map, AREA_MIN_ZOOM, (c) => {
+  userMoved = true
+  followMe = false
+  locateBtn.classList.remove('on')
+  map.setView(c.center, 13)
+})
+
 let moveTimer: ReturnType<typeof setTimeout> | undefined
 let savedView = ''
 map.on('moveend', () => {
   clearTimeout(moveTimer)
   moveTimer = setTimeout(() => {
+    followCity()
     updateTopics()
+    cityMarkers.update()
     if (__HAS_KEY__) stopsLayer.update()
   }, 250)
   // While following a vehicle this fires every second; localStorage writes are synchronous,
@@ -321,7 +382,7 @@ function select(id: string | null): void {
     if (m) {
       map.panTo([m.lat, m.lng])
       onSelectedUpdate(m)
-      announce(`Line ${m.desi || 'unknown'}${m.headsign ? ` to ${m.headsign}` : ''}, vehicle ${+m.veh}`)
+      announce(`Line ${m.desi || 'unknown'}${m.headsign ? ` to ${m.headsign}` : ''}${m.veh ? `, vehicle ${+m.veh}` : ''}`)
     }
     card.hidden = false
   }
@@ -333,7 +394,7 @@ function loadTrip(m: Msg): void {
   trip = null
   tripLine.clear()
   tripNote = ''
-  if (!m.route || !m.start || !m.oday) return
+  if (!canFetchTrip(m)) return
   const k = tripK
   fetchTrip(m)
     .then((t) => {
@@ -373,7 +434,7 @@ function renderCard(m: Msg): void {
           ? 'Stopped · doors open'
           : 'Stopped'
         : `${Math.round(m.spd * 3.6)} km/h`
-  const meta = [d.text && `<span class="${d.cls}">${d.text}</span>`, speed, `#${+m.veh}`]
+  const meta = [d.text && `<span class="${d.cls}">${d.text}</span>`, speed, m.veh && `#${+m.veh}`]
     .filter(Boolean)
     .join(' · ')
 
@@ -441,8 +502,20 @@ let boardMore = true // more departures may exist after the loaded ones
 let loadingMore = false
 let moreFailed = false
 
+/** A stop as written in the URL: "1130446" for HSL (as always), "tampere:3598" elsewhere. */
+const stopParamOf = (s: StopRef): string => (s.city === DEFAULT_CITY.id ? s.id : stopKey(s))
+
+/** The ?stop= param back to a stop, or null if it isn't a valid stop id (same checks as api/stop.ts). */
+function parseStopParam(p: string): Pick<StopRef, 'city' | 'id'> | null {
+  const i = p.indexOf(':')
+  const city = i < 0 ? DEFAULT_CITY : cityById(p.slice(0, i))
+  const id = p.slice(i + 1)
+  if (!city || (i >= 0 && city === DEFAULT_CITY) || !city.ids.stop.test(id)) return null
+  return { city: city.id, id }
+}
+
 function selectStop(s: StopRef | null): void {
-  if (s && stopSel?.id === s.id) return
+  if (s && stopSel && stopKey(stopSel) === stopKey(s)) return
   if (s) select(null)
   stopSel = s
   board = null
@@ -454,10 +527,7 @@ function selectStop(s: StopRef | null): void {
   moreFailed = false
   clearInterval(boardTimer)
   stopsLayer.setSelected(s && Number.isFinite(s.lat) ? s : null)
-  const u = new URL(location.href)
-  if (s) u.searchParams.set('stop', s.id)
-  else u.searchParams.delete('stop')
-  history.replaceState(null, '', u)
+  setParam('stop', s ? stopParamOf(s) : null)
   const card = $('card')
   if (!s) {
     if (!selected) card.hidden = true
@@ -475,7 +545,7 @@ function loadBoard(): void {
   const s = stopSel
   if (!s || document.hidden) return
   const seq = ++boardSeq
-  fetchStopBoard(s.id)
+  fetchStopBoard(s)
     .then((b) => {
       if (seq !== boardSeq) return
       if (!b) {
@@ -527,7 +597,7 @@ function loadMore(): void {
   loadingMore = true
   moreFailed = false
   renderBoard()
-  fetchStopBoard(s.id, start)
+  fetchStopBoard(s, start)
     .then((b) => {
       if (gen !== stopGen || !board) return
       const keys = new Set(board.departures.map(departureKey))
@@ -552,8 +622,20 @@ const dayFmt = new Intl.DateTimeFormat('en-GB', {
   month: 'numeric',
 })
 
-const tripMatchKey = (route: string, dir: string, date: string, start: number) =>
-  `${route}|${dir}|${date}|${start}`
+/**
+ * Matches live vehicles to departures: by trip id where the feed has one (GTFS-RT), else
+ * (HFP) by route, direction, service day and start time.
+ */
+function tripMatchKey(
+  city: string,
+  tripId: string,
+  route: string,
+  dir: string,
+  date: string,
+  start: () => number,
+): string {
+  return tripId ? `${city}|${tripId}` : `${city}|${route}|${dir}|${date}|${start()}`
+}
 
 /**
  * Live vehicles by the trip they're running, to find the vehicle for a departure.
@@ -563,22 +645,23 @@ const tripMatchKey = (route: string, dir: string, date: string, start: number) =
 function liveByTrip(): Map<string, Msg> {
   const out = new Map<string, Msg>()
   for (const m of vehicles.visible()) {
-    if (!m.start || !m.oday) continue
-    out.set(tripMatchKey(m.route, m.dir, m.oday, tripStartSeconds(m.start, m.oday, m.tst)), m)
+    if (!m.tripId && (!m.start || !m.oday)) continue
+    out.set(tripMatchKey(m.city, m.tripId, m.route, m.dir, m.oday, () => tripStartSeconds(m.start, m.oday, m.tst)), m)
   }
   return out
 }
 
 /** The live vehicle running this departure, if it's on the map. */
-function vehicleFor(d: Departure, live: Map<string, Msg>): Msg | undefined {
-  if (d.canceled || d.start < 0) return undefined
-  return live.get(tripMatchKey(d.route, d.dir, d.date, d.start))
+function vehicleFor(d: Departure, city: string, live: Map<string, Msg>): Msg | undefined {
+  if (d.canceled) return undefined
+  if (!d.tripId && d.start < 0) return undefined
+  return live.get(tripMatchKey(city, d.tripId, d.route, d.dir, d.date, () => d.start))
 }
 
 const PIN =
   '<svg class="pin" viewBox="0 0 24 24" width="14" height="14"><path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2"/></svg>'
 
-function departureRow(d: Departure, nowS: number, live: Map<string, Msg>): string {
+function departureRow(d: Departure, city: string, nowS: number, live: Map<string, Msg>): string {
   const mins = Math.floor((d.at - nowS) / 60)
   const when = d.canceled ? 'Cancelled' : mins <= 0 ? 'Now' : mins < 20 ? `${mins} min` : clock(d.clockSec)
   const late = Math.round((d.at - d.sched) / 60)
@@ -587,7 +670,7 @@ function departureRow(d: Departure, nowS: number, live: Map<string, Msg>): strin
     : d.realtime
       ? `Realtime estimate${late > 0 ? `, ${late} min late` : late < 0 ? `, ${-late} min early` : ''} (scheduled ${clock(d.clockSec - (d.at - d.sched))})`
       : 'Scheduled time (no realtime data)'
-  const veh = vehicleFor(d, live)
+  const veh = vehicleFor(d, city, live)
   const cls = [d.canceled && 'cx', veh && 'on-map'].filter(Boolean).join(' ')
   const attrs = veh
     ? ` data-act="veh" data-id="${escapeHtml(veh.id)}" role="button" tabindex="0" aria-label="Show ${escapeHtml(d.line)} to ${escapeHtml(d.headsign)} on the map"`
@@ -616,7 +699,7 @@ function renderBoard(): void {
       day = dDay
       rows += `<li class="day">${dDay === tomorrow ? 'Tomorrow' : escapeHtml(dayFmt.format(new Date(d.at * 1000)))}</li>`
     }
-    rows += departureRow(d, nowS, live)
+    rows += departureRow(d, s.city, nowS, live)
   }
   if (rows && board) {
     if (loadingMore) rows += '<li class="more">Loading later departures…</li>'
@@ -790,9 +873,10 @@ function startSearch(): void {
 function resolveLines(want: Array<string>): void {
   if (!__HAS_KEY__) return // filter only within the visible area
   const wantTerms = terms
-  Promise.all(want.map(fetchRoutes))
+  const city = searchCity
+  Promise.all(want.map((l) => fetchRoutes(city, l)))
     .then((rs) => {
-      if (terms !== wantTerms) return
+      if (terms !== wantTerms || city !== searchCity) return
       const ids = [...new Set(rs.flat().map((r) => r.id))]
       if (!ids.length) {
         toast(`No line ${want.join(', ')}`)
@@ -898,11 +982,11 @@ let hiddenAt = 0
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     hiddenAt = Date.now()
-    mqtt.stop() // no data or battery use in the background
+    liveFeeds.stop() // no data or battery use in the background
     pauseGps()
   } else {
     if (Date.now() - hiddenAt > 20000) vehicles.markAllStale()
-    mqtt.start()
+    liveFeeds.start()
     if (gpsOn) startGps()
     loadBoard() // no-op unless a stop board is open
   }
@@ -911,17 +995,18 @@ document.addEventListener('visibilitychange', () => {
 q.value = terms.join(' ')
 clearBtn.hidden = !terms.length
 renderModes()
+liveFeeds.start()
+followCity() // the initial view fires no moveend
 updateTopics()
 if (__HAS_KEY__) stopsLayer.update()
-mqtt.start()
 void autoStartGps()
 startSearch()
 
-// ?stop=1130446 opens that stop's board (a shareable "my stop" link). Same check as api/stop.ts.
-const stopParam = new URL(location.href).searchParams.get('stop') ?? ''
-if (__HAS_KEY__ && /^\d{7}$/.test(stopParam)) {
+// ?stop=1130446 (HSL) or ?stop=tampere:3598 opens that stop's board (a shareable "my stop" link).
+const linkStop = parseStopParam(new URL(location.href).searchParams.get('stop') ?? '')
+if (__HAS_KEY__ && linkStop) {
   userMoved = true // don't jump to GPS
-  selectStop({ id: stopParam, name: '', code: '', lat: NaN, lng: NaN, mode: null })
+  selectStop({ ...linkStop, name: '', code: '', lat: NaN, lng: NaN, mode: null })
 }
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

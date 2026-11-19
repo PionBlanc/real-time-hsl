@@ -1,24 +1,41 @@
-// GET /api/trip?route=2551&dir=1&date=2026-11-17&time=61200
-// Resolves a live HFP vehicle to its GTFS trip: path geometry + stops with scheduled times.
-import { apiKey, badRequest, canonicalInt, graphql, guard, json, noKey, upstreamError } from './_digitransit'
+// GET /api/trip?route=2551&dir=1&date=2026-11-17&time=61200   (HSL)
+// GET /api/trip?city=tampere&trip=137_22357_17849130           (GTFS-RT cities)
+// Resolves a live vehicle to its GTFS trip: path geometry + stops with scheduled times.
+// HFP has no trip id, so HSL vehicles are matched by route, direction, day and start time;
+// GTFS-RT vehicles carry their trip id.
+import { localId } from './_cities'
+import type { City } from './_cities'
+import {
+  apiKey,
+  badRequest,
+  canonicalInt,
+  cityParam,
+  graphql,
+  guard,
+  json,
+  noKey,
+  upstreamError,
+} from './_digitransit'
 
 export const config = { runtime: 'edge' }
 
-const QUERY = `query($r:String!,$d:Int!,$date:String!,$t:Int!){
-  fuzzyTrip(route:$r,direction:$d,date:$date,time:$t){
+const TRIP_FIELDS = `
     tripHeadsign
     route{shortName mode}
     pattern{patternGeometry{points}}
-    stoptimes{scheduledDeparture stop{gtfsId name code lat lon}}
-  }
+    stoptimes{scheduledDeparture stop{gtfsId name code lat lon}}`
+
+const FUZZY_QUERY = `query($r:String!,$d:Int!,$date:String!,$t:Int!){
+  trip: fuzzyTrip(route:$r,direction:$d,date:$date,time:$t){${TRIP_FIELDS}}
 }`
 
-/**
- * Digitransit GraphQL response (only the fields queried above).
- * fuzzyTrip finds the trip from what HFP knows: route, direction, service day and start time.
- */
+const ID_QUERY = `query($id:String!){
+  trip(id:$id){${TRIP_FIELDS}}
+}`
+
+/** Digitransit GraphQL response (only the fields queried above). */
 interface Resp {
-  fuzzyTrip: null | {
+  trip: null | {
     tripHeadsign: string | null // destination, e.g. "Kamppi"
     route: {
       shortName: string // line number shown to passengers, e.g. "551"
@@ -35,19 +52,20 @@ interface Resp {
   }
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  const denied = guard(req, ['route', 'dir', 'date', 'time'])
-  if (denied) return denied
-  const key = apiKey()
-  if (!key) return noKey()
-  const q = new URL(req.url).searchParams
+/** The GraphQL query and variables for this request, or null if it's malformed. */
+function lookup(city: City, q: URLSearchParams): { query: string; vars: Record<string, unknown> } | null {
+  if (city.live === 'gtfsrt') {
+    const trip = q.get('trip') ?? ''
+    if ([...q.keys()].length !== 2 || !city.ids.trip.test(trip)) return null
+    return { query: ID_QUERY, vars: { id: `${city.feedId}:${trip}` } }
+  }
   const route = q.get('route') ?? ''
   const dir = q.get('dir') ?? ''
   const date = q.get('date') ?? ''
   const time = canonicalInt(q.get('time'))
   if (
-    // HSL route ids: 2–4 digits plus up to 3 more (2551, 1001H, 31M1, 3002U, 4611BK…; checked 2026-11).
-    !/^\d{2,4}[0-9A-Z]{0,3}$/.test(route) ||
+    q.has('trip') ||
+    !city.ids.route.test(route) ||
     !/^[12]$/.test(dir) ||
     !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
     // Live vehicles only run on yesterday's, today's or tomorrow's service day.
@@ -55,16 +73,25 @@ export default async function handler(req: Request): Promise<Response> {
     // HFP start times are HH:mm, so whole minutes, at most 48 h into the service day.
     time == null || time % 60 !== 0 || time > 172_800
   ) {
-    return badRequest()
+    return null
   }
+  return {
+    query: FUZZY_QUERY,
+    vars: { r: `${city.feedId}:${route}`, d: Number(dir) - 1 /* HFP 1/2 -> GTFS 0/1 */, date, t: time },
+  }
+}
+
+export default async function handler(req: Request): Promise<Response> {
+  const denied = guard(req, ['city', 'route', 'dir', 'date', 'time', 'trip'])
+  if (denied) return denied
+  const key = apiKey()
+  if (!key) return noKey()
+  const q = new URL(req.url).searchParams
+  const city = cityParam(q)
+  const l = city && lookup(city, q)
+  if (!city || !l) return badRequest()
   try {
-    const d = await graphql<Resp>(key, QUERY, {
-      r: `HSL:${route}`,
-      d: Number(dir) - 1, // HFP 1/2 -> GTFS 0/1
-      date,
-      t: time,
-    })
-    const t = d.fuzzyTrip
+    const t = (await graphql<Resp>(key, city, l.query, l.vars)).trip
     if (!t) return json({ error: 'not_found' }, 404, 'public, s-maxage=300')
     return json(
       {
@@ -72,9 +99,9 @@ export default async function handler(req: Request): Promise<Response> {
         n: t.route.shortName,
         m: t.route.mode,
         g: t.pattern.patternGeometry?.points ?? '',
-        // [id without "HSL:", name, code, lat, lon, scheduled departure (s since service-day midnight)]
+        // [id without the feed prefix, name, code, lat, lon, scheduled departure (s since service-day midnight)]
         s: t.stoptimes.map((st) => [
-          st.stop.gtfsId.replace(/^HSL:/, ''),
+          localId(city, st.stop.gtfsId) ?? st.stop.gtfsId,
           st.stop.name,
           st.stop.code ?? '',
           st.stop.lat,

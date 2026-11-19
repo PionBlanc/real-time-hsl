@@ -14,6 +14,7 @@ the source pages. It was last checked on **2026-11-17**. The terms can change wi
 | Routing API (GraphQL) | <https://digitransit.fi/en/developers/apis/1-routing-api/> |
 | Background map tiles | <https://digitransit.fi/en/developers/apis/4-map-api/background-map/> |
 | Realtime: HFP vehicle positions (MQTT) | <https://digitransit.fi/en/developers/apis/5-realtime-api/vehicle-positions/high-frequency-positioning/> |
+| Realtime: GTFS-RT vehicle positions, other cities (MQTT) | <https://digitransit.fi/en/developers/apis/5-realtime-api/vehicle-positions/digitransit-mqtt/> |
 | Deprecations | <https://digitransit.fi/en/developers/deprecations/> |
 | HSL open data (license info) | <https://www.hsl.fi/en/hsl/open-data> |
 | OpenStreetMap ODbL / attribution | <https://www.openstreetmap.org/copyright> |
@@ -77,7 +78,9 @@ the source pages. It was last checked on **2026-11-17**. The terms can change wi
 ### 6. Map tiles
 - Use map **v3**: `cdn.digitransit.fi/map/v3/<source>/…`. v1 and v2 have been removed.
 - **In the app:** `api/tile.ts` proxies the `hsl-map-en` source with the key in a header and
-  converts the tiles to WebP. The map's attribution stays as described in section 1.
+  converts the tiles to WebP. The map's attribution stays as described in section 1. Close up it
+  only serves tiles inside a city's area (`api/_cities.ts`), not the countryside between cities;
+  zoomed out (tile zoom ≤ 7) it serves all of Finland for the city overview.
 
 ### 7. HFP / MQTT (`wss://mqtt.hsl.fi:443/`, no key needed)
 - In browsers, use port 443 (TLS). The docs prefer it to protect users' location privacy.
@@ -88,6 +91,17 @@ the source pages. It was last checked on **2026-11-17**. The terms can change wi
   `journey/ongoing/vp`.
 - There is no stated limit on the number of filters ("Go hog wild"). The app caps itself at 160,
   and when zoomed out it subscribes only to geohash levels 0–3 to save bandwidth.
+
+### 7b. GTFS-RT / MQTT for other cities (`wss://mqtt.digitransit.fi:443/`, no key needed)
+- Checked 2026-11-19: connects without a key over `wss` on port 443 (the docs list "433", a typo).
+- Topics: `/gtfsrt/vp/<feed_id>/…`, with the same geohash levels as HFP; payloads are protobuf
+  GTFS-RT `FeedMessage`s with one vehicle each. The docs warn the city list "might not always be
+  up-to-date".
+- Docs' guidance: don't subscribe to everything; random client id suffix; keepalive under a
+  minute; retry about every 30 s, not every second. The app uses the same client and limits as
+  for HFP (section 7), and only connects once a GTFS-RT city is on screen.
+- **In the app:** `src/gtfsrt.ts`. Vehicle-number search subscribes to the whole city's feed (a
+  few hundred vehicles), since side numbers are only part of the vehicle id level.
 
 ### 8. Fallback map without a key (OpenStreetMap tiles)
 - `tile.openstreetmap.org` has its own usage policy: it requires attribution and forbids heavy or

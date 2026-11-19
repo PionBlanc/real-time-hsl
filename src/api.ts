@@ -1,11 +1,14 @@
-import { helsinkiDate, tripStartSeconds } from './hfp'
-import type { Mode, Msg } from './hfp'
+import { DEFAULT_CITY } from '../api/_cities'
+import type { City, CityId } from '../api/_cities'
+import type { Mode, Msg } from './feed'
+import { helsinkiDate, tripStartSeconds } from './time'
 
 /*
  * Client-side types for our own /api/* endpoints (see api/*.ts), which wrap the
  * Digitransit GraphQL API. The endpoints send compact JSON (short keys, positional
  * arrays) to save bandwidth; the fetch* functions below expand it into these types.
  * Query params must be in the order api/*.ts lists them in guard() (else 400).
+ * All ids are without the feed prefix ("1130446", not "HSL:1130446"); the city says which feed.
  * Positional arrays are append-only (see api/_digitransit.ts).
  *
  * Time conventions:
@@ -16,7 +19,7 @@ import type { Mode, Msg } from './hfp'
 
 /** One stop along a trip (from /api/trip). */
 export interface TripStop {
-  id: string   // GTFS stop id without "HSL:", e.g. "1130446"
+  id: string   // GTFS stop id, e.g. "1130446"
   name: string // stop name, e.g. "Kamppi"
   code: string // short code shown at the stop, e.g. "H1234"; "" if none
   lat: number
@@ -26,7 +29,8 @@ export interface TripStop {
 
 /** The scheduled trip a live vehicle is running (from /api/trip). */
 export interface Trip {
-  headsign: string               // destination, e.g. "Kamppi"
+  city: CityId
+  headsign: string              // destination, e.g. "Kamppi"
   name: string                   // line number shown to passengers, e.g. "551"
   shape: Array<[number, number]> // path the vehicle drives, [lat, lng] points
   stops: Array<TripStop>         // in driving order
@@ -34,7 +38,18 @@ export interface Trip {
 
 export class MissingKeyError extends Error {}
 
-export const tripKey = (m: Msg): string => `${m.route}|${m.dir}|${m.oday}|${m.start}`
+/** The first query param for a city: none for HSL, so its URLs stay as they always were. */
+const cityQs = (city: City | CityId): string => {
+  const id = typeof city === 'string' ? city : city.id
+  return id === DEFAULT_CITY.id ? '' : `city=${id}&`
+}
+
+/** Identifies the trip a vehicle is running (for caching and spotting trip changes). */
+export const tripKey = (m: Msg): string =>
+  m.tripId ? `${m.city}|${m.tripId}` : `${m.city}|${m.route}|${m.dir}|${m.oday}|${m.start}`
+
+/** Whether the vehicle says enough to look up its trip. */
+export const canFetchTrip = (m: Msg): boolean => !!m.tripId || !!(m.route && m.start && m.oday)
 
 /** Trips hold whole route shapes: keep only the most recently used ones (Map order = LRU). */
 const TRIP_CACHE_MAX = 50
@@ -47,14 +62,22 @@ export function fetchTrip(m: Msg): Promise<Trip | null> {
     tripCache.delete(key)
     tripCache.set(key, p)
   } else {
-    const time = tripStartSeconds(m.start, m.oday, m.tst)
-    const qs = new URLSearchParams({ route: m.route, dir: m.dir, date: m.oday, time: String(time) })
-    p = fetch(`/api/trip?${qs}`).then(async (r) => {
+    // GTFS-RT vehicles know their trip; HFP ones are matched by route, direction, day and start.
+    const qs = m.tripId
+      ? new URLSearchParams({ trip: m.tripId })
+      : new URLSearchParams({
+          route: m.route,
+          dir: m.dir,
+          date: m.oday,
+          time: String(tripStartSeconds(m.start, m.oday, m.tst)),
+        })
+    p = fetch(`/api/trip?${cityQs(m.city)}${qs}`).then(async (r) => {
       if (r.status === 503) throw new MissingKeyError()
       if (r.status === 404) return null
       if (!r.ok) throw new Error(`trip ${r.status}`)
       const d = await r.json()
       return {
+        city: m.city,
         headsign: d.h,
         name: d.n,
         shape: decodePolyline(d.g),
@@ -77,20 +100,21 @@ export function fetchTrip(m: Msg): Promise<Trip | null> {
 
 /** A route matching a searched line number (from /api/routes, used as-is). */
 export interface RouteRef {
-  id: string // route id without "HSL:", as in HFP topics, e.g. "2551"
+  id: string // route id, as in the live feed's topics, e.g. "2551"
   n: string  // name: line number shown to passengers, e.g. "551"
   m: string  // GTFS mode: "BUS", "TRAM", "SUBWAY", "RAIL", "FERRY" (see gtfsMode)
 }
 
 const routeCache = new Map<string, Promise<Array<RouteRef>>>()
 
-export function fetchRoutes(line: string): Promise<Array<RouteRef>> {
-  const key = line.toUpperCase()
+export function fetchRoutes(city: City, line: string): Promise<Array<RouteRef>> {
+  const q = line.toUpperCase()
+  const key = `${city.id}|${q}`
   let p = routeCache.get(key)
   if (!p) {
-    p = fetch(`/api/routes?q=${encodeURIComponent(key)}`).then((r) => {
+    p = fetch(`/api/routes?${cityQs(city)}q=${encodeURIComponent(q)}`).then((r) => {
       if (r.status === 503) throw new MissingKeyError()
-      if (r.status === 400) return [] // not shaped like any HSL line name
+      if (r.status === 400) return [] // not shaped like any line name
       if (!r.ok) throw new Error(`routes ${r.status}`)
       return r.json()
     })
@@ -120,7 +144,8 @@ export function gtfsMode(m: string): Mode | null {
 
 /** A stop on the map (from /api/stops, and the header of /api/stop). */
 export interface StopRef {
-  id: string        // GTFS stop id without "HSL:", e.g. "1130446"
+  city: CityId
+  id: string        // GTFS stop id, e.g. "1130446"
   name: string      // stop name, e.g. "Kamppi"
   code: string      // short code shown at the stop, e.g. "H1234"; "" if none
   lat: number
@@ -138,8 +163,9 @@ export interface Departure {
   clockSec: number  // estimated departure, s since service-day midnight (for clock())
   realtime: boolean // true = `at` is a live estimate, false = only the timetable
   canceled: boolean // trip is canceled (still listed, so it can be shown struck out)
-  // For matching against live HFP vehicles (same meaning as in Msg):
-  route: string // route id without "HSL:", e.g. "2551"
+  // For matching against live vehicles (same meaning as in Msg):
+  tripId: string // GTFS trip id (matches Msg.tripId on GTFS-RT feeds)
+  route: string // route id, e.g. "2551"
   dir: string   // direction "1" or "2", HFP style
   date: string  // service day YYYY-MM-DD (Msg.oday)
   start: number // trip's start at its first stop, s since service-day midnight (-1 = unknown)
@@ -154,7 +180,7 @@ export interface StopBoard {
 
 /** Same departure across fetches (realtime estimates change, these don't). */
 export function departureKey(d: Departure): string {
-  return `${d.route}|${d.dir}|${d.date}|${d.start}|${d.sched}`
+  return `${d.tripId}|${d.route}|${d.dir}|${d.date}|${d.start}|${d.sched}`
 }
 
 /** Departures per board request; fixed server-side (PAGE in api/stop.ts). */
@@ -165,17 +191,22 @@ export const STOP_PAGE = 20
  * `start` is rounded down to the minute (the API only accepts whole minutes, for caching),
  * so a page may repeat departures from that minute; dedupe with departureKey().
  */
-export async function fetchStopBoard(id: string, start?: number): Promise<StopBoard | null> {
+export async function fetchStopBoard(
+  stop: { city: CityId; id: string },
+  start?: number,
+): Promise<StopBoard | null> {
+  const { city, id } = stop
   const r = await fetch(
-    `/api/stop?id=${encodeURIComponent(id)}${start != null ? `&start=${Math.floor(start / 60) * 60}` : ''}`,
+    `/api/stop?${cityQs(city)}id=${encodeURIComponent(id)}${start != null ? `&start=${Math.floor(start / 60) * 60}` : ''}`,
   )
   if (r.status === 503) throw new MissingKeyError()
   if (r.status === 404) return null
   if (!r.ok) throw new Error(`stop ${r.status}`)
   const d = await r.json()
-  type Row = [string, string, string, number, number, number, number, number, string, number, number]
+  // Older deployments don't send the trip id (index 11).
+  type Row = [string, string, string, number, number, number, number, number, string, number, number, string?]
   return {
-    stop: { id, name: d.n, code: d.c, lat: d.la, lng: d.lo, mode: gtfsMode(d.m) },
+    stop: { city, id, name: d.n, code: d.c, lat: d.la, lng: d.lo, mode: gtfsMode(d.m) },
     platform: d.p,
     departures: (d.d as Array<Row>).map((x) => ({
       line: x[0],
@@ -186,6 +217,7 @@ export async function fetchStopBoard(id: string, start?: number): Promise<StopBo
       clockSec: x[5],
       realtime: x[6] === 1,
       canceled: x[7] === 1,
+      tripId: x[11] ?? '',
       route: x[8],
       dir: String(x[9]),
       // Service day starts at local midnight (noon - 12 h), so +12 h lands safely mid-day.
@@ -200,15 +232,15 @@ export const CELL_LAT = 0.02
 export const CELL_LON = 0.04
 const cellCache = new Map<string, Promise<Array<StopRef>>>()
 
-export function fetchStopCell(la: number, lo: number): Promise<Array<StopRef>> {
-  const key = `${la}/${lo}`
+export function fetchStopCell(city: City, la: number, lo: number): Promise<Array<StopRef>> {
+  const key = `${city.id}/${la}/${lo}`
   let p = cellCache.get(key)
   if (!p) {
-    p = fetch(`/api/stops?la=${la}&lo=${lo}`).then(async (r) => {
+    p = fetch(`/api/stops?${cityQs(city)}la=${la}&lo=${lo}`).then(async (r) => {
       if (r.status === 503) throw new MissingKeyError()
       if (!r.ok) throw new Error(`stops ${r.status}`)
       const d = (await r.json()) as Array<[string, string, string, number, number, string]>
-      return d.map((s) => ({ id: s[0], name: s[1], code: s[2], lat: s[3], lng: s[4], mode: gtfsMode(s[5]) }))
+      return d.map((s) => ({ city: city.id, id: s[0], name: s[1], code: s[2], lat: s[3], lng: s[4], mode: gtfsMode(s[5]) }))
     })
     p.catch(() => cellCache.delete(key))
     cellCache.set(key, p)

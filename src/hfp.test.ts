@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { areaFilters, clock, delayText, parseMessage, routeFilter, topicModes, tripStartSeconds, vehicleFilter } from './hfp'
+import { areaFilters, parseMessage, routeFilter, topicModes, vehicleFilter } from './hfp'
+import { clock, delayText, tripStartSeconds } from './time'
 import { decodePolyline } from './api'
 
 const enc = new TextEncoder()

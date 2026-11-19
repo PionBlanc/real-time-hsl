@@ -42,10 +42,20 @@ describe('tileInArea', () => {
     expect(tileInArea(13, 4663, 2371)).toBe(true)
     expect(tileInArea(7, 72, 36)).toBe(true)
   })
+  it('serves every city', () => {
+    // Tampere centre (61.498, 23.761) at z=13
+    expect(tileInArea(13, 4636, 2309)).toBe(true)
+  })
+  it('serves all of Finland only when zoomed out to the city overview', () => {
+    expect(tileInArea(6, 36, 16)).toBe(true) // Oulu
+    expect(tileInArea(13, 4675, 2131)).toBe(false) // Oulu, close up: not a city in the app yet
+    expect(tileInArea(13, 4651, 2328)).toBe(false) // countryside between Helsinki and Tampere
+  })
   it('rejects tiles outside the region, beyond 2^z, or at unused zooms', () => {
     expect(tileInArea(13, 0, 0)).toBe(false)
     expect(tileInArea(13, 9000, 2371)).toBe(false)
     expect(tileInArea(18, 9326, 4742)).toBe(false)
-    expect(tileInArea(6, 36, 18)).toBe(false)
+    expect(tileInArea(6, 10, 10)).toBe(false)
+    expect(tileInArea(3, 4, 2)).toBe(false)
   })
 })

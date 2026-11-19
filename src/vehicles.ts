@@ -1,6 +1,6 @@
 import L from 'leaflet'
-import { COLORS } from './hfp'
-import type { Msg } from './hfp'
+import { COLORS } from './feed'
+import type { Msg } from './feed'
 import { VehicleCanvas } from './vehicle-canvas'
 import type { Sprite } from './vehicle-canvas'
 

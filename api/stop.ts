@@ -1,7 +1,8 @@
-// GET /api/stop?id=1130446[&start=<unix s, whole minute>]
+// GET /api/stop?[city=tampere&]id=1130446[&start=<unix s, whole minute>]
 // Next departures from one stop, with realtime estimates where available ("bus-stop screen").
 // `start` pages further into the future (departures at or after that time).
-import { apiKey, badRequest, canonicalInt, graphql, guard, json, noKey, upstreamError } from './_digitransit'
+import { localId } from './_cities'
+import { apiKey, badRequest, canonicalInt, cityParam, graphql, guard, json, noKey, upstreamError } from './_digitransit'
 
 export const config = { runtime: 'edge' }
 
@@ -10,7 +11,7 @@ const QUERY = `query($id:String!,$start:Long!,$n:Int!){
     name code platformCode lat lon vehicleMode
     stoptimesWithoutPatterns(startTime:$start,numberOfDepartures:$n,omitNonPickups:true,omitCanceled:false){
       serviceDay scheduledDeparture realtimeDeparture realtime realtimeState headsign
-      trip{ directionId route{gtfsId shortName mode} departureStoptime{scheduledDeparture} }
+      trip{ gtfsId directionId route{gtfsId shortName mode} departureStoptime{scheduledDeparture} }
     }
   }
 }`
@@ -33,6 +34,7 @@ interface Resp {
       realtimeState: string | null // "SCHEDULED", "UPDATED", "CANCELED", "ADDED" or "MODIFIED"
       headsign: string | null      // destination as shown at this stop
       trip: {
+        gtfsId: string             // e.g. "tampere:137_22357_17849130"
         directionId: string | null // GTFS direction "0"/"1" (HFP uses 1/2)
         route: {
           gtfsId: string           // e.g. "HSL:2551"
@@ -51,25 +53,26 @@ interface Resp {
 const PAGE = 20
 
 export default async function handler(req: Request): Promise<Response> {
-  const denied = guard(req, ['id', 'start'])
+  const denied = guard(req, ['city', 'id', 'start'])
   if (denied) return denied
   const key = apiKey()
   if (!key) return noKey()
   const q = new URL(req.url).searchParams
+  const city = cityParam(q)
   const id = q.get('id') ?? ''
   const startS = q.get('start')
   const start = startS == null ? 0 : canonicalInt(startS) // 0 = now
   const nowS = Date.now() / 1000
   if (
-    // All HSL stop ids are 7 digits (checked 2026-11, 8339 stops). Keep in sync with src/main.ts.
-    !/^\d{7}$/.test(id) ||
+    !city ||
+    !city.ids.stop.test(id) ||
     start == null ||
     // Paging is by whole minutes, so at most one cache entry per stop per minute.
     (start !== 0 && (start % 60 !== 0 || start < nowS - 3600 || start > nowS + 7 * 86400))
   )
     return badRequest()
   try {
-    const d = await graphql<Resp>(key, QUERY, { id: `HSL:${id}`, start, n: PAGE })
+    const d = await graphql<Resp>(key, city, QUERY, { id: `${city.feedId}:${id}`, start, n: PAGE })
     const s = d.stop
     if (!s) return json({ error: 'not_found' }, 404, 'public, s-maxage=3600')
     return json(
@@ -81,7 +84,8 @@ export default async function handler(req: Request): Promise<Response> {
         lo: s.lon,
         m: s.vehicleMode ?? '',
         // [line, mode, headsign, service day (unix s), scheduled (s since service day),
-        //  estimated (s), realtime 0/1, canceled 0/1, route id, HFP dir 1/2, trip start (s)]
+        //  estimated (s), realtime 0/1, canceled 0/1, route id, HFP dir 1/2, trip start (s),
+        //  trip id]  (ids without the feed prefix)
         d: s.stoptimesWithoutPatterns.map((st) => [
           st.trip.route.shortName ?? '',
           st.trip.route.mode,
@@ -91,9 +95,10 @@ export default async function handler(req: Request): Promise<Response> {
           st.realtimeDeparture,
           st.realtime ? 1 : 0,
           st.realtimeState === 'CANCELED' ? 1 : 0,
-          st.trip.route.gtfsId.replace(/^HSL:/, ''),
+          localId(city, st.trip.route.gtfsId) ?? st.trip.route.gtfsId,
           Number(st.trip.directionId ?? 0) + 1, // GTFS 0/1 -> HFP 1/2
           st.trip.departureStoptime?.scheduledDeparture ?? -1,
+          localId(city, st.trip.gtfsId) ?? st.trip.gtfsId,
         ]),
       },
       200,

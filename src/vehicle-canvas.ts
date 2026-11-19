@@ -1,6 +1,6 @@
 import L from 'leaflet'
-import { COLORS } from './hfp'
-import type { Mode } from './hfp'
+import { COLORS } from './feed'
+import type { Mode } from './feed'
 
 /** Glide between position updates, which arrive about once a second. */
 const MOVE_MS = 1000
